@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightweight VS Code</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/fold/foldgutter.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', 'Consolas', 'Courier New', monospace; }
+        body { background-color: #1e1e1e; color: #d4d4d4; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+
+        .title-bar { background-color: #3c3c3c; height: 30px; display: flex; align-items: center; padding: 0 15px; font-size: 12px; color: #cccccc; border-bottom: 1px solid #252526; flex-shrink: 0; }
+        .title-bar .title { flex: 1; text-align: center; }
+        .title-bar .window-controls { display: flex; gap: 15px; align-items: center; }
+        .title-bar .window-controls i { cursor: pointer; color: #cccccc; font-size: 12px; }
+        .title-bar .window-controls i:hover { color: #ffffff; }
+        .autosave-indicator { font-size: 10px; color: #4ec9b0; padding: 2px 8px; border-radius: 10px; background: rgba(78, 201, 176, 0.15); display: flex; align-items: center; gap: 5px; }
+        .intellisense-indicator { font-size: 10px; color: #c586c0; padding: 2px 8px; border-radius: 10px; background: rgba(197, 134, 192, 0.15); display: flex; align-items: center; gap: 5px; }
+        .persist-indicator { font-size: 10px; color: #ffd166; padding: 2px 8px; border-radius: 10px; background: rgba(255, 209, 102, 0.15); display: flex; align-items: center; gap: 5px; }
+        .save-btn {
+            background: #0e639c; color: white; border: none; padding: 2px 10px; border-radius: 3px;
+            font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-family: inherit;
+        }
+        .save-btn:hover { background: #1177bb; }
+
+        .main-container { display: flex; flex: 1; overflow: hidden; }
+        .activity-bar { width: 48px; background-color: #333333; display: flex; flex-direction: column; align-items: center; padding-top: 10px; border-right: 1px solid #252526; z-index: 100; flex-shrink: 0; }
+        .activity-bar .icon { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #858585; font-size: 20px; transition: all 0.2s; }
+        .activity-bar .icon:hover { color: #ffffff; }
+        .activity-bar .icon.active { color: #ffffff; border-left: 2px solid #007acc; background-color: #2a2d2e; }
+
+        .sidebar { width: 260px; background-color: #252526; display: flex; flex-direction: column; border-right: 1px solid #1e1e1e; overflow: hidden; transition: width 0.2s; flex-shrink: 0; }
+        .sidebar.collapsed { width: 0; border-right: none; }
+        .sidebar-header { padding: 10px 15px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #bbbbbb; font-weight: 600; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e1e1e; flex-shrink: 0; }
+        .sidebar-header .actions { display: flex; gap: 4px; }
+        .sidebar-header .actions i { cursor: pointer; color: #cccccc; font-size: 12px; padding: 3px 5px; border-radius: 3px; }
+        .sidebar-header .actions i:hover { color: #ffffff; background-color: #3c3c3c; }
+        .sidebar-header .actions i.close-sidebar:hover { background-color: #c33; color: #ffffff; }
+
+        .file-explorer { flex: 1; overflow-y: auto; padding: 5px 0; position: relative; }
+        .file-explorer.drag-over { background-color: rgba(0, 122, 204, 0.1); outline: 2px dashed #007acc; outline-offset: -2px; }
+        .drop-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #007acc; font-size: 14px; text-align: center; pointer-events: none; display: none; }
+        .file-explorer.drag-over .drop-hint { display: block; }
+
+        .file-item { display: flex; align-items: center; padding: 4px 15px; cursor: pointer; font-size: 13px; color: #cccccc; transition: background 0.1s; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+        .file-item:hover { background-color: #2a2d2e; }
+        .file-item.active { background-color: #37373d; color: #ffffff; }
+        .file-item.selected { background-color: #094771; }
+        .file-item i { margin-right: 8px; font-size: 14px; width: 16px; text-align: center; flex-shrink: 0; }
+        .file-item .item-name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+        .file-item .item-actions { display: none; gap: 2px; margin-left: auto; }
+        .file-item:hover .item-actions { display: flex; }
+        .file-item .item-actions i { font-size: 11px; padding: 3px 5px; border-radius: 3px; margin: 0; width: auto; color: #cccccc; }
+        .file-item .item-actions i:hover { background-color: #444; color: #ffffff; }
+        .file-item .item-actions i[data-action="delete"]:hover { background-color: #c33; color: #ffffff; }
+        .file-item .folder-icon { color: #dcb67a; }
+        .file-item .js-icon { color: #f1e05a; }
+        .file-item .html-icon { color: #e34c26; }
+        .file-item .css-icon { color: #563d7c; }
+        .file-item .json-icon { color: #cbcb41; }
+        .file-item .image-icon { color: #a074c4; }
+        .file-item.folder { font-weight: 500; }
+        .file-children { padding-left: 12px; }
+        .folder-toggle { font-size: 10px; width: 12px; text-align: center; margin-right: 4px; color: #858585; }
+        .folder-toggle.collapsed { transform: rotate(-90deg); display: inline-block; }
+
+        .editor-area { flex: 1; display: flex; flex-direction: column; background-color: #1e1e1e; overflow: hidden; min-width: 0; }
+        .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
+        .editor-and-preview { display: flex; flex: 1; overflow: hidden; }
+        .editor-pane { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-width: 0; }
+
+        .preview-pane { display: flex; flex-direction: column; width: 50%; border-left: 1px solid #333; background-color: #fff; overflow: hidden; min-width: 200px; }
+        .preview-pane.hidden { display: none; }
+        .preview-header { background-color: #252526; padding: 8px 15px; font-size: 12px; color: #cccccc; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e1e1e; flex-shrink: 0; }
+        .preview-header .actions { display: flex; gap: 12px; align-items: center; }
+        .preview-header .actions i { cursor: pointer; color: #cccccc; font-size: 12px; }
+        .preview-header .actions i:hover { color: #ffffff; }
+        .preview-status { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(78, 201, 176, 0.15); color: #4ec9b0; }
+        .preview-frame { flex: 1; border: none; background-color: #fff; }
+
+        .tabs { display: flex; background-color: #252526; height: 35px; border-bottom: 1px solid #1e1e1e; overflow-x: auto; scrollbar-width: thin; flex-shrink: 0; }
+        .tabs::-webkit-scrollbar { height: 3px; }
+        .tabs::-webkit-scrollbar-thumb { background-color: #424242; }
+        .tab { display: flex; align-items: center; padding: 0 12px; height: 100%; background-color: #2d2d2d; border-right: 1px solid #1e1e1e; font-size: 13px; color: #969696; cursor: pointer; white-space: nowrap; transition: background 0.2s; min-width: 100px; max-width: 200px; position: relative; }
+        .tab:hover { background-color: #2a2d2e; }
+        .tab.active { background-color: #1e1e1e; color: #ffffff; border-top: 1px solid #007acc; }
+        .tab i { margin-right: 8px; font-size: 14px; flex-shrink: 0; }
+        .tab .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tab .close { margin-left: 10px; font-size: 12px; opacity: 0; padding: 2px; border-radius: 3px; flex-shrink: 0; }
+        .tab:hover .close { opacity: 1; }
+        .tab .close:hover { background-color: #555; }
+
+        .editor-container { flex: 1; position: relative; overflow: hidden; }
+        .editor-container .CodeMirror { height: 100%; font-size: 14px; font-family: 'Consolas', 'Courier New', monospace; line-height: 1.5; }
+        .editor-container .CodeMirror-gutters { background-color: #1e1e1e; border-right: 1px solid #333; }
+        .editor-container .CodeMirror-linenumber { color: #858585; }
+
+        .cm-snippet-placeholder { background: rgba(78, 201, 176, 0.3) !important; border-radius: 2px; padding: 0 1px; }
+
+        .image-viewer { display: flex; align-items: center; justify-content: center; height: 100%; background-color: #1e1e1e; padding: 20px; }
+        .image-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }
+
+        .status-bar { height: 22px; background-color: #007acc; display: flex; align-items: center; padding: 0 15px; font-size: 12px; color: #ffffff; justify-content: space-between; flex-shrink: 0; z-index: 100; }
+        .status-bar .left, .status-bar .right { display: flex; align-items: center; gap: 15px; }
+        .status-bar i { font-size: 12px; cursor: pointer; }
+        .run-btn { background: #4ec9b0; color: #1e1e1e; border: none; padding: 3px 12px; border-radius: 3px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+        .run-btn:hover { background: #5ed9c0; }
+        .save-status { font-size: 11px; display: flex; align-items: center; gap: 5px; }
+
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .context-menu { position: fixed; background: #252526; border: 1px solid #454545; border-radius: 4px; padding: 4px 0; min-width: 180px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); z-index: 10000; font-size: 12px; }
+        .context-menu .menu-item { padding: 6px 15px; cursor: pointer; color: #cccccc; display: flex; align-items: center; gap: 10px; }
+        .context-menu .menu-item:hover { background: #094771; color: #ffffff; }
+        .context-menu .menu-item.danger:hover { background: #5a1d1d; color: #f48771; }
+        .context-menu .menu-item i { width: 14px; text-align: center; font-size: 11px; }
+        .context-menu .divider { height: 1px; background: #454545; margin: 4px 0; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal { background: #252526; border: 1px solid #454545; border-radius: 6px; padding: 20px; min-width: 380px; max-width: 500px; }
+        .modal h3 { font-size: 14px; margin-bottom: 15px; color: #ffffff; }
+        .modal p { font-size: 13px; color: #cccccc; margin-bottom: 15px; line-height: 1.5; }
+        .modal input { width: 100%; padding: 8px 10px; background: #3c3c3c; border: 1px solid #454545; border-radius: 4px; color: #d4d4d4; font-size: 13px; outline: none; margin-bottom: 15px; font-family: inherit; }
+        .modal input:focus { border-color: #007acc; }
+        .modal .buttons { display: flex; justify-content: flex-end; gap: 10px; }
+        .modal button { padding: 6px 15px; border-radius: 4px; font-size: 12px; cursor: pointer; border: none; }
+        .modal button.primary { background: #007acc; color: white; }
+        .modal button.primary:hover { background: #0088dd; }
+        .modal button.danger { background: #c33; color: white; }
+        .modal button.danger:hover { background: #d44; }
+        .modal button.secondary { background: #3c3c3c; color: #cccccc; }
+        .modal button.secondary:hover { background: #4c4c4c; }
+
+        /* Save/Load menu */
+        .save-menu-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            color: #cccccc;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #2a2d2e;
+        }
+        .save-menu-item:hover { background: #094771; color: #ffffff; }
+        .save-menu-item .icon-wrap {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            background: rgba(0, 122, 204, 0.15);
+            color: #519aba;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .save-menu-item .text { flex: 1; }
+        .save-menu-item .text .title { font-size: 13px; color: #d4d4d4; }
+        .save-menu-item .text .subtitle { font-size: 11px; color: #858585; margin-top: 2px; }
+        .save-menu-item:hover .text .title { color: #ffffff; }
+        .save-menu-item:hover .text .subtitle { color: #c0c0c0; }
+
+        .toast-container { position: fixed; bottom: 40px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 2000; }
+        .toast { background: #252526; color: #d4d4d4; padding: 10px 20px; border-radius: 4px; border-left: 3px solid #007acc; font-size: 13px; animation: slideIn 0.3s ease; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); display: flex; align-items: center; gap: 10px; min-width: 200px; }
+        .toast.success { border-left-color: #4ec9b0; }
+        .toast.error { border-left-color: #f48771; }
+        .toast.info { border-left-color: #519aba; }
+        .toast .undo-btn { margin-left: auto; background: #3c3c3c; color: #d4d4d4; border: none; padding: 3px 8px; border-radius: 3px; font-size: 11px; cursor: pointer; }
+        .toast .undo-btn:hover { background: #4c4c4c; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+
+        .resize-handle { width: 4px; background: #1e1e1e; cursor: col-resize; transition: background 0.2s; flex-shrink: 0; }
+        .resize-handle:hover { background: #007acc; }
+
+        .empty-state { padding: 30px 20px; text-align: center; color: #858585; font-size: 12px; }
+        .empty-state i { font-size: 40px; margin-bottom: 15px; color: #454545; }
+        .empty-state button { margin-top: 15px; padding: 8px 15px; background: #007acc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+
+        /* Hint popup */
+        .CodeMirror-hints { background: #252526 !important; border: 1px solid #454545 !important; border-radius: 4px !important; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7) !important; font-family: 'Consolas', 'Courier New', monospace !important; font-size: 13px !important; z-index: 99999 !important; padding: 4px 0 !important; max-height: 340px !important; min-width: 260px !important; }
+        .CodeMirror-hint { color: #d4d4d4 !important; padding: 4px 10px !important; cursor: pointer; display: flex !important; align-items: center; line-height: 1.5; gap: 8px; white-space: nowrap; }
+        .CodeMirror-hint-active { background: #094771 !important; color: #ffffff !important; }
+        .hint-prefix { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; text-align: center; font-weight: bold; border-radius: 3px; font-size: 10px; color: #1e1e1e; flex-shrink: 0; }
+        .hint-prefix.snippet { background: #4ec9b0; }
+        .hint-prefix.keyword { background: #c586c0; }
+        .hint-prefix.function { background: #dcdcaa; }
+        .hint-prefix.method { background: #dcdcaa; }
+        .hint-prefix.property { background: #9cdcfe; }
+        .hint-prefix.class { background: #4ec9b0; }
+        .hint-prefix.variable { background: #9cdcfe; }
+        .hint-prefix.tag { background: #569cd6; }
+        .hint-prefix.attribute { background: #9cdcfe; }
+        .hint-prefix.css-prop { background: #9cdcfe; }
+        .hint-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+        .hint-match { color: #4ec9b0; font-weight: bold; background: rgba(78, 201, 176, 0.12); border-radius: 2px; padding: 0 1px; }
+        .CodeMirror-hint-active .hint-match { color: #ffffff; background: rgba(255, 255, 255, 0.15); }
+        .hint-detail { color: #858585; font-size: 11px; margin-left: 12px; }
+        .CodeMirror-hint-active .hint-detail { color: #c0c0c0; }
+    </style>
+</head>
+<body>
+    <div class="title-bar">
+        <div class="window-controls">
+            <i class="fas fa-circle" style="color: #ff5f56; font-size: 10px;"></i>
+            <i class="fas fa-circle" style="color: #ffbd2e; font-size: 10px;"></i>
+            <i class="fas fa-circle" style="color: #27c93f; font-size: 10px;"></i>
+        </div>
+        <div class="title">Lightweight VS Code - Welcome</div>
+        <div class="window-controls">
+            <span class="persist-indicator" id="persistIndicator" title="Saved to browser storage"><i class="fas fa-database"></i> <span id="persistText">Not saved</span></span>
+            <button class="save-btn" onclick="openSaveMenu()" title="Save / Download (Ctrl+Shift+S)">
+                <i class="fas fa-save"></i> Save
+            </button>
+            <span class="intellisense-indicator"><i class="fas fa-magic"></i> IntelliSense</span>
+            <i class="fas fa-minus"></i>
+            <i class="fas fa-square"></i>
+            <i class="fas fa-times"></i>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="activity-bar">
+            <div class="icon active" title="Explorer (Ctrl+B)" data-view="explorer"><i class="fas fa-folder"></i></div>
+            <div class="icon" title="Search" data-view="search"><i class="fas fa-search"></i></div>
+            <div class="icon" title="Save & Export" data-view="save"><i class="fas fa-cloud-download-alt"></i></div>
+            <div class="icon" title="Import" data-view="import"><i class="fas fa-file-import"></i></div>
+            <div class="icon" title="Snippets" data-view="snippets"><i class="fas fa-code"></i></div>
+        </div>
+
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span id="sidebarTitle">Explorer</span>
+                <div class="actions" id="sidebarActions">
+                    <i class="fas fa-file" title="New File" onclick="createNewFile()"></i>
+                    <i class="fas fa-folder-plus" title="New Folder" onclick="createNewFolder()"></i>
+                    <i class="fas fa-file-import" title="Import Files" onclick="triggerImport()"></i>
+                    <i class="fas fa-sync-alt" title="Refresh" onclick="refreshExplorer()"></i>
+                    <i class="fas fa-times close-sidebar" title="Close Sidebar (Ctrl+B)" onclick="closeSidebar()"></i>
+                </div>
+            </div>
+            <div class="file-explorer" id="fileExplorer">
+                <div class="drop-hint"><i class="fas fa-cloud-upload-alt" style="font-size: 32px; display: block; margin-bottom: 8px;"></i>Drop files here to import</div>
+            </div>
+        </div>
+
+        <div class="editor-area">
+            <div class="tabs" id="tabs"></div>
+            <div class="main-content">
+                <div class="editor-and-preview" id="editorAndPreview">
+                    <div class="editor-pane" id="editorPane">
+                        <div class="editor-container" id="editorContainer"></div>
+                    </div>
+                    <div class="resize-handle" id="resizeHandle" style="display: none;"></div>
+                    <div class="preview-pane hidden" id="previewPane">
+                        <div class="preview-header">
+                            <span><i class="fas fa-eye"></i> Live Preview <span class="preview-status" id="previewStatus">Auto</span></span>
+                            <div class="actions">
+                                <i class="fas fa-sync-alt" title="Refresh" onclick="refreshPreview(true)"></i>
+                                <i class="fas fa-external-link-alt" title="Open in new tab" onclick="openPreviewInNewTab()"></i>
+                                <i class="fas fa-times" title="Close Preview" onclick="togglePreview()"></i>
+                            </div>
+                        </div>
+                        <iframe class="preview-frame" id="previewFrame" sandbox="allow-scripts allow-modals allow-forms allow-same-origin allow-popups"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="left">
+            <i class="fas fa-code-branch"></i> main
+            <i class="fas fa-sync-alt" title="Save to browser" onclick="saveToBrowser()" style="cursor:pointer;"></i>
+            <i class="fas fa-exclamation-circle"></i> <span id="dirtyCount">0</span>
+            <i class="fas fa-times-circle"></i> 0
+            <button class="run-btn" onclick="togglePreview()">
+                <i class="fas fa-play"></i> <span id="runBtnText">Run</span>
+            </button>
+            <span class="save-status" id="saveStatus"></span>
+        </div>
+        <div class="right">
+            <span title="Trigger IntelliSense"><i class="fas fa-magic"></i> Ctrl+Space</span>
+            <span id="cursorPosition">Ln 1, Col 1</span>
+            <span id="fileLanguage">JavaScript</span>
+            <span>UTF-8</span>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" multiple style="display: none;">
+    <input type="file" id="folderInput" webkitdirectory multiple style="display: none;">
+    <input type="file" id="imageInput" accept="image/*" style="display: none;">
+    <input type="file" id="jsonInput" accept=".json,application/json" style="display: none;">
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- JSZip for project download -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/fold/brace-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.js"></script>
+
+    <script>
+    // ============================================================
+    // Lightweight VS Code — with Save / Load / Download
+    // ============================================================
+
+    var STORAGE_KEY = 'lightweight_vscode_workspace_v1';
+
+    // ---------- FILE SYSTEM ----------
+    var fileSystem = {
+        'index.html': {
+            type: 'file', language: 'htmlmixed',
+            content: '<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>My App</title>\n    <link rel="stylesheet" href="styles.css">\n</head>\n<body>\n    <div class="container">\n        <h1>Hello, World! 🚀</h1>\n        <p>Try typing <strong>div</strong>, <strong>btn</strong>, or <strong>html5</strong> then press Tab</p>\n        <button id="clickBtn">Click Me</button>\n        <p id="output"></p>\n    </div>\n    <script src="app.js"><\/script>\n</body>\n</html>'
+        },
+        'styles.css': {
+            type: 'file', language: 'css',
+            content: '* { margin: 0; padding: 0; box-sizing: border-box; }\n\nbody {\n    font-family: \'Segoe UI\', Arial, sans-serif;\n    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n    min-height: 100vh;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.container {\n    background: white;\n    padding: 40px;\n    border-radius: 12px;\n    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);\n    text-align: center;\n    max-width: 500px;\n}\n\nh1 { color: #667eea; margin-bottom: 15px; font-size: 2.5em; }\np { line-height: 1.6; color: #666; margin-bottom: 20px; }\n\nbutton {\n    background: #667eea;\n    color: white;\n    border: none;\n    padding: 12px 30px;\n    border-radius: 6px;\n    font-size: 16px;\n    cursor: pointer;\n}\n\nbutton:hover { background: #5568d3; }\n\n#output { margin-top: 20px; font-weight: bold; color: #667eea; }'
+        },
+        'app.js': {
+            type: 'file', language: 'javascript',
+            content: '// Try: "log", "func", "forr" then Tab\n// Save your work: click the SAVE button in the top right\n\nconsole.log(\'App loaded! 🎉\');\n\nlet clickCount = 0;\n\ndocument.addEventListener(\'DOMContentLoaded\', () => {\n    const btn = document.getElementById(\'clickBtn\');\n    const output = document.getElementById(\'output\');\n    \n    btn.addEventListener(\'click\', () => {\n        clickCount++;\n        output.textContent = `You clicked ${clickCount} times!`;\n    });\n});'
+        }
+    };
+
+    // ---------- SNIPPETS ----------
+    var SNIPPETS = {
+        javascript: [
+            { label: 'log', detail: 'console.log', insert: 'console.log(${1:message});', type: 'snippet' },
+            { label: 'clg', detail: 'console.log', insert: 'console.log(${1:message});', type: 'snippet' },
+            { label: 'error', detail: 'console.error', insert: 'console.error(${1:error});', type: 'snippet' },
+            { label: 'warn', detail: 'console.warn', insert: 'console.warn(${1:warning});', type: 'snippet' },
+            { label: 'func', detail: 'Function declaration', insert: 'function ${1:name}(${2:params}) {\n\t${3:// body}\n}', type: 'snippet' },
+            { label: 'arrow', detail: 'Arrow function', insert: 'const ${1:name} = (${2:params}) => {\n\t${3:// body}\n};', type: 'snippet' },
+            { label: 'async', detail: 'Async function', insert: 'async function ${1:name}(${2:params}) {\n\t${3:// body}\n}', type: 'snippet' },
+            { label: 'iffe', detail: 'IIFE', insert: '(function() {\n\t${1:// body}\n})();', type: 'snippet' },
+            { label: 'forr', detail: 'for loop', insert: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\t${3:// body}\n}', type: 'snippet' },
+            { label: 'forof', detail: 'for...of loop', insert: 'for (const ${1:item} of ${2:iterable}) {\n\t${3:// body}\n}', type: 'snippet' },
+            { label: 'foreach', detail: 'Array forEach', insert: '${1:array}.forEach((${2:item}) => {\n\t${3:// body}\n});', type: 'snippet' },
+            { label: 'map', detail: 'Array map', insert: '${1:array}.map((${2:item}) => ${3:item});', type: 'snippet' },
+            { label: 'filter', detail: 'Array filter', insert: '${1:array}.filter((${2:item}) => ${3:condition});', type: 'snippet' },
+            { label: 'while', detail: 'While loop', insert: 'while (${1:condition}) {\n\t${2:// body}\n}', type: 'snippet' },
+            { label: 'if', detail: 'If statement', insert: 'if (${1:condition}) {\n\t${2:// body}\n}', type: 'snippet' },
+            { label: 'ifelse', detail: 'If-else', insert: 'if (${1:condition}) {\n\t${2:// true}\n} else {\n\t${3:// false}\n}', type: 'snippet' },
+            { label: 'tryc', detail: 'Try/catch', insert: 'try {\n\t${1:// try}\n} catch (${2:error}) {\n\tconsole.error(${2:error});\n}', type: 'snippet' },
+            { label: 'obj', detail: 'Object literal', insert: 'const ${1:name} = {\n\t${2:key}: ${3:value}\n};', type: 'snippet' },
+            { label: 'arr', detail: 'Array literal', insert: 'const ${1:name} = [${2:items}];', type: 'snippet' },
+            { label: 'cls', detail: 'Class', insert: 'class ${1:Name} {\n\tconstructor(${2:params}) {\n\t\t${3:// init}\n\t}\n}', type: 'snippet' },
+            { label: 'prom', detail: 'Promise', insert: 'new Promise((resolve, reject) => {\n\t${1:// body}\n});', type: 'snippet' },
+            { label: 'fetch', detail: 'Fetch request', insert: 'fetch(${1:url})\n\t.then(res => res.json())\n\t.then(data => {\n\t\t${2:// handle}\n\t})\n\t.catch(err => console.error(err));', type: 'snippet' },
+            { label: 'addev', detail: 'addEventListener', insert: '${1:element}.addEventListener(\'${2:click}\', (${3:e}) => {\n\t${4:// handler}\n});', type: 'snippet' },
+            { label: 'qs', detail: 'querySelector', insert: 'document.querySelector(\'${1:selector}\')', type: 'snippet' },
+            { label: 'qsa', detail: 'querySelectorAll', insert: 'document.querySelectorAll(\'${1:selector}\')', type: 'snippet' },
+            { label: 'gebi', detail: 'getElementById', insert: 'document.getElementById(\'${1:id}\')', type: 'snippet' },
+            { label: 'timeout', detail: 'setTimeout', insert: 'setTimeout(() => {\n\t${1:// callback}\n}, ${2:1000});', type: 'snippet' },
+            { label: 'interval', detail: 'setInterval', insert: 'setInterval(() => {\n\t${1:// callback}\n}, ${2:1000});', type: 'snippet' }
+        ],
+        htmlmixed: [
+            { label: 'html5', detail: 'HTML5 boilerplate', insert: '<!DOCTYPE html>\n<html lang="${1:en}">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${2:Document}</title>\n</head>\n<body>\n\t${3}\n</body>\n</html>', type: 'snippet' },
+            { label: 'div', detail: 'Div element', insert: '<div class="${1:container}">\n\t${2}\n</div>', type: 'snippet' },
+            { label: 'span', detail: 'Span', insert: '<span>${1:text}</span>', type: 'snippet' },
+            { label: 'p', detail: 'Paragraph', insert: '<p>${1:text}</p>', type: 'snippet' },
+            { label: 'a', detail: 'Anchor', insert: '<a href="${1:url}">${2:text}</a>', type: 'snippet' },
+            { label: 'img', detail: 'Image', insert: '<img src="${1:image.png}" alt="${2:description}">', type: 'snippet' },
+            { label: 'input', detail: 'Input field', insert: '<input type="${1:text}" name="${2:name}" placeholder="${3:Enter text}">', type: 'snippet' },
+            { label: 'btn', detail: 'Button', insert: '<button type="${1:button}" id="${2:id}">${3:Click Me}</button>', type: 'snippet' },
+            { label: 'link', detail: 'Stylesheet link', insert: '<link rel="stylesheet" href="${1:styles.css}">', type: 'snippet' },
+            { label: 'script', detail: 'Script tag', insert: '<script src="${1:app.js}"><\/script>', type: 'snippet' },
+            { label: 'ul', detail: 'Unordered list', insert: '<ul>\n\t<li>${1:Item 1}</li>\n\t<li>${2:Item 2}</li>\n</ul>', type: 'snippet' },
+            { label: 'h1', detail: 'Heading 1', insert: '<h1>${1:Heading}</h1>', type: 'snippet' },
+            { label: 'section', detail: 'Section', insert: '<section class="${1:section}">\n\t${2}\n</section>', type: 'snippet' },
+            { label: 'form', detail: 'Form', insert: '<form action="${1:/submit}" method="${2:POST}">\n\t${3}\n</form>', type: 'snippet' },
+            { label: 'table', detail: 'Table', insert: '<table>\n\t<thead>\n\t\t<tr><th>${1:Header}</th></tr>\n\t</thead>\n\t<tbody>\n\t\t<tr><td>${2:Cell}</td></tr>\n\t</tbody>\n</table>', type: 'snippet' }
+        ],
+        css: [
+            { label: 'flex', detail: 'Flexbox container', insert: 'display: flex;\nalign-items: ${1:center};\njustify-content: ${2:center};', type: 'snippet' },
+            { label: 'flexcol', detail: 'Flexbox column', insert: 'display: flex;\nflex-direction: column;\nalign-items: ${1:center};', type: 'snippet' },
+            { label: 'grid', detail: 'CSS Grid', insert: 'display: grid;\ngrid-template-columns: repeat(${1:3}, 1fr);\ngap: ${2:16px};', type: 'snippet' },
+            { label: 'center', detail: 'Center content', insert: 'display: flex;\njustify-content: center;\nalign-items: center;', type: 'snippet' },
+            { label: 'bg', detail: 'background-color', insert: 'background-color: ${1:#ffffff};', type: 'snippet' },
+            { label: 'color', detail: 'color', insert: 'color: ${1:#000000};', type: 'snippet' },
+            { label: 'fs', detail: 'font-size', insert: 'font-size: ${1:16px};', type: 'snippet' },
+            { label: 'm', detail: 'margin', insert: 'margin: ${1:0} ${2:0};', type: 'snippet' },
+            { label: 'p', detail: 'padding', insert: 'padding: ${1:0} ${2:0};', type: 'snippet' },
+            { label: 'w', detail: 'width', insert: 'width: ${1:100%};', type: 'snippet' },
+            { label: 'h', detail: 'height', insert: 'height: ${1:100%};', type: 'snippet' },
+            { label: 'bdr', detail: 'border', insert: 'border: ${1:1px} solid ${2:#cccccc};', type: 'snippet' },
+            { label: 'bdrr', detail: 'border-radius', insert: 'border-radius: ${1:8px};', type: 'snippet' },
+            { label: 'box', detail: 'box-shadow', insert: 'box-shadow: 0 ${1:4px} ${2:12px} rgba(0, 0, 0, ${3:0.15});', type: 'snippet' },
+            { label: 'trans', detail: 'transition', insert: 'transition: all ${1:0.3s} ${2:ease};', type: 'snippet' },
+            { label: '@m', detail: '@media query', insert: '@media (max-width: ${1:768px}) {\n\t${2}\n}', type: 'snippet' },
+            { label: 'grad', detail: 'linear-gradient', insert: 'background: linear-gradient(${1:135deg}, ${2:#667eea}, ${3:#764ba2});', type: 'snippet' }
+        ]
+    };
+
+    // ---------- LANGUAGE APIS ----------
+    var LANGUAGE_APIS = {
+        javascript: [
+            { label: 'console.log', detail: 'Log to console', type: 'function' },
+            { label: 'console.error', detail: 'Log error', type: 'function' },
+            { label: 'console.warn', detail: 'Log warning', type: 'function' },
+            { label: 'console.info', detail: 'Log info', type: 'function' },
+            { label: 'console.table', detail: 'Log table', type: 'function' },
+            { label: 'document.getElementById', detail: 'Get element by ID', type: 'function' },
+            { label: 'document.querySelector', detail: 'Query selector', type: 'function' },
+            { label: 'document.querySelectorAll', detail: 'Query selector all', type: 'function' },
+            { label: 'document.createElement', detail: 'Create element', type: 'function' },
+            { label: 'document.addEventListener', detail: 'Add event listener', type: 'function' },
+            { label: 'document.body', detail: 'Body element', type: 'property' },
+            { label: 'window.location', detail: 'Current URL', type: 'property' },
+            { label: 'window.localStorage', detail: 'Local storage', type: 'property' },
+            { label: 'window.innerWidth', detail: 'Viewport width', type: 'property' },
+            { label: 'window.innerHeight', detail: 'Viewport height', type: 'property' },
+            { label: 'window.addEventListener', detail: 'Add listener', type: 'function' },
+            { label: 'localStorage.setItem', detail: 'Store data', type: 'method' },
+            { label: 'localStorage.getItem', detail: 'Get data', type: 'method' },
+            { label: 'localStorage.removeItem', detail: 'Remove data', type: 'method' },
+            { label: 'JSON.parse', detail: 'Parse JSON', type: 'function' },
+            { label: 'JSON.stringify', detail: 'Convert to JSON', type: 'function' },
+            { label: 'Array.isArray', detail: 'Check if array', type: 'function' },
+            { label: 'Array.from', detail: 'Create array', type: 'function' },
+            { label: 'Object.keys', detail: 'Get keys', type: 'function' },
+            { label: 'Object.values', detail: 'Get values', type: 'function' },
+            { label: 'Object.entries', detail: 'Get entries', type: 'function' },
+            { label: 'Object.assign', detail: 'Merge objects', type: 'function' },
+            { label: 'Math.random', detail: 'Random 0-1', type: 'function' },
+            { label: 'Math.floor', detail: 'Round down', type: 'function' },
+            { label: 'Math.ceil', detail: 'Round up', type: 'function' },
+            { label: 'Math.round', detail: 'Round', type: 'function' },
+            { label: 'Math.max', detail: 'Maximum', type: 'function' },
+            { label: 'Math.min', detail: 'Minimum', type: 'function' },
+            { label: 'Date.now', detail: 'Timestamp', type: 'function' },
+            { label: 'setTimeout', detail: 'Delay execution', type: 'function' },
+            { label: 'setInterval', detail: 'Repeat execution', type: 'function' },
+            { label: 'fetch', detail: 'HTTP request', type: 'function' },
+            { label: 'parseInt', detail: 'Parse integer', type: 'function' },
+            { label: 'parseFloat', detail: 'Parse float', type: 'function' },
+            { label: 'const', detail: 'Constant', type: 'keyword' },
+            { label: 'let', detail: 'Block variable', type: 'keyword' },
+            { label: 'var', detail: 'Function variable', type: 'keyword' },
+            { label: 'function', detail: 'Function declaration', type: 'keyword' },
+            { label: 'return', detail: 'Return', type: 'keyword' },
+            { label: 'if', detail: 'If statement', type: 'keyword' },
+            { label: 'else', detail: 'Else clause', type: 'keyword' },
+            { label: 'for', detail: 'For loop', type: 'keyword' },
+            { label: 'while', detail: 'While loop', type: 'keyword' },
+            { label: 'switch', detail: 'Switch', type: 'keyword' },
+            { label: 'break', detail: 'Break', type: 'keyword' },
+            { label: 'continue', detail: 'Continue', type: 'keyword' },
+            { label: 'new', detail: 'New instance', type: 'keyword' },
+            { label: 'this', detail: 'Current context', type: 'keyword' },
+            { label: 'class', detail: 'Class', type: 'keyword' },
+            { label: 'extends', detail: 'Inheritance', type: 'keyword' },
+            { label: 'super', detail: 'Parent', type: 'keyword' },
+            { label: 'async', detail: 'Async', type: 'keyword' },
+            { label: 'await', detail: 'Await', type: 'keyword' },
+            { label: 'try', detail: 'Try block', type: 'keyword' },
+            { label: 'catch', detail: 'Catch block', type: 'keyword' },
+            { label: 'finally', detail: 'Finally block', type: 'keyword' },
+            { label: 'throw', detail: 'Throw', type: 'keyword' },
+            { label: 'typeof', detail: 'Type check', type: 'keyword' },
+            { label: 'export', detail: 'Export', type: 'keyword' },
+            { label: 'import', detail: 'Import', type: 'keyword' },
+            { label: 'true', detail: 'Boolean true', type: 'keyword' },
+            { label: 'false', detail: 'Boolean false', type: 'keyword' },
+            { label: 'null', detail: 'Null', type: 'keyword' },
+            { label: 'undefined', detail: 'Undefined', type: 'keyword' },
+            { label: 'map', detail: 'Array map', type: 'method' },
+            { label: 'filter', detail: 'Array filter', type: 'method' },
+            { label: 'reduce', detail: 'Array reduce', type: 'method' },
+            { label: 'forEach', detail: 'Array forEach', type: 'method' },
+            { label: 'find', detail: 'Array find', type: 'method' },
+            { label: 'push', detail: 'Array push', type: 'method' },
+            { label: 'pop', detail: 'Array pop', type: 'method' },
+            { label: 'slice', detail: 'Array slice', type: 'method' },
+            { label: 'splice', detail: 'Array splice', type: 'method' },
+            { label: 'join', detail: 'Array join', type: 'method' },
+            { label: 'split', detail: 'String split', type: 'method' },
+            { label: 'trim', detail: 'String trim', type: 'method' },
+            { label: 'toUpperCase', detail: 'Uppercase', type: 'method' },
+            { label: 'toLowerCase', detail: 'Lowercase', type: 'method' },
+            { label: 'replace', detail: 'String replace', type: 'method' }
+        ],
+        htmlmixed: [
+            { label: 'div', detail: 'Division', type: 'tag' }, { label: 'span', detail: 'Inline container', type: 'tag' },
+            { label: 'p', detail: 'Paragraph', type: 'tag' }, { label: 'a', detail: 'Anchor', type: 'tag' },
+            { label: 'img', detail: 'Image', type: 'tag' }, { label: 'input', detail: 'Input', type: 'tag' },
+            { label: 'button', detail: 'Button', type: 'tag' }, { label: 'form', detail: 'Form', type: 'tag' },
+            { label: 'label', detail: 'Label', type: 'tag' }, { label: 'select', detail: 'Select', type: 'tag' },
+            { label: 'textarea', detail: 'Textarea', type: 'tag' }, { label: 'table', detail: 'Table', type: 'tag' },
+            { label: 'tr', detail: 'Table row', type: 'tag' }, { label: 'td', detail: 'Table cell', type: 'tag' },
+            { label: 'ul', detail: 'List', type: 'tag' }, { label: 'ol', detail: 'Ordered list', type: 'tag' },
+            { label: 'li', detail: 'List item', type: 'tag' }, { label: 'nav', detail: 'Navigation', type: 'tag' },
+            { label: 'header', detail: 'Header', type: 'tag' }, { label: 'footer', detail: 'Footer', type: 'tag' },
+            { label: 'main', detail: 'Main content', type: 'tag' }, { label: 'section', detail: 'Section', type: 'tag' },
+            { label: 'article', detail: 'Article', type: 'tag' }, { label: 'h1', detail: 'Heading 1', type: 'tag' },
+            { label: 'h2', detail: 'Heading 2', type: 'tag' }, { label: 'h3', detail: 'Heading 3', type: 'tag' },
+            { label: 'video', detail: 'Video', type: 'tag' }, { label: 'canvas', detail: 'Canvas', type: 'tag' },
+            { label: 'script', detail: 'Script', type: 'tag' }, { label: 'style', detail: 'Style', type: 'tag' },
+            { label: 'link', detail: 'Link', type: 'tag' }, { label: 'meta', detail: 'Meta', type: 'tag' },
+            { label: 'br', detail: 'Line break', type: 'tag' }, { label: 'hr', detail: 'HR', type: 'tag' },
+            { label: 'strong', detail: 'Bold', type: 'tag' }, { label: 'em', detail: 'Italic', type: 'tag' },
+            { label: 'id', detail: 'Element ID', type: 'attribute' }, { label: 'class', detail: 'CSS class', type: 'attribute' },
+            { label: 'style', detail: 'Inline style', type: 'attribute' }, { label: 'src', detail: 'Source URL', type: 'attribute' },
+            { label: 'href', detail: 'Hyperlink', type: 'attribute' }, { label: 'alt', detail: 'Alt text', type: 'attribute' },
+            { label: 'type', detail: 'Input type', type: 'attribute' }, { label: 'name', detail: 'Field name', type: 'attribute' },
+            { label: 'placeholder', detail: 'Placeholder', type: 'attribute' }, { label: 'disabled', detail: 'Disabled', type: 'attribute' },
+            { label: 'onclick', detail: 'Click handler', type: 'attribute' }, { label: 'onchange', detail: 'Change handler', type: 'attribute' },
+            { label: 'charset', detail: 'Character set', type: 'attribute' }, { label: 'lang', detail: 'Language', type: 'attribute' }
+        ],
+        css: [
+            { label: 'display', detail: 'Display mode', type: 'css-prop' }, { label: 'position', detail: 'Positioning', type: 'css-prop' },
+            { label: 'width', detail: 'Width', type: 'css-prop' }, { label: 'height', detail: 'Height', type: 'css-prop' },
+            { label: 'margin', detail: 'Margin', type: 'css-prop' }, { label: 'padding', detail: 'Padding', type: 'css-prop' },
+            { label: 'font-family', detail: 'Font family', type: 'css-prop' }, { label: 'font-size', detail: 'Font size', type: 'css-prop' },
+            { label: 'font-weight', detail: 'Font weight', type: 'css-prop' }, { label: 'line-height', detail: 'Line height', type: 'css-prop' },
+            { label: 'text-align', detail: 'Text align', type: 'css-prop' }, { label: 'color', detail: 'Text color', type: 'css-prop' },
+            { label: 'background', detail: 'Background', type: 'css-prop' }, { label: 'background-color', detail: 'BG color', type: 'css-prop' },
+            { label: 'border', detail: 'Border', type: 'css-prop' }, { label: 'border-radius', detail: 'Border radius', type: 'css-prop' },
+            { label: 'box-shadow', detail: 'Box shadow', type: 'css-prop' }, { label: 'overflow', detail: 'Overflow', type: 'css-prop' },
+            { label: 'opacity', detail: 'Opacity', type: 'css-prop' }, { label: 'cursor', detail: 'Cursor', type: 'css-prop' },
+            { label: 'transition', detail: 'Transition', type: 'css-prop' }, { label: 'animation', detail: 'Animation', type: 'css-prop' },
+            { label: 'transform', detail: 'Transform', type: 'css-prop' }, { label: 'flex', detail: 'Flex', type: 'css-prop' },
+            { label: 'flex-direction', detail: 'Flex direction', type: 'css-prop' }, { label: 'justify-content', detail: 'Justify content', type: 'css-prop' },
+            { label: 'align-items', detail: 'Align items', type: 'css-prop' }, { label: 'gap', detail: 'Gap', type: 'css-prop' },
+            { label: 'grid', detail: 'Grid', type: 'css-prop' }, { label: 'grid-template-columns', detail: 'Grid columns', type: 'css-prop' },
+            { label: 'absolute', detail: 'Position absolute', type: 'keyword' }, { label: 'relative', detail: 'Position relative', type: 'keyword' },
+            { label: 'fixed', detail: 'Position fixed', type: 'keyword' }, { label: 'flex', detail: 'Display flex', type: 'keyword' },
+            { label: 'grid', detail: 'Display grid', type: 'keyword' }, { label: 'block', detail: 'Display block', type: 'keyword' },
+            { label: 'none', detail: 'None', type: 'keyword' }, { label: 'hidden', detail: 'Overflow hidden', type: 'keyword' },
+            { label: 'center', detail: 'Center', type: 'keyword' }, { label: 'pointer', detail: 'Cursor pointer', type: 'keyword' }
+        ]
+    };
+
+    // ---------- STATE ----------
+    var openFiles = [];
+    var activeFilePath = null;
+    var editor = null;
+    var previewVisible = false;
+    var isResizing = false;
+    var autoSaveTimer = null;
+    var autoPreviewTimer = null;
+    var autoPersistTimer = null;
+    var collapsedFolders = {};
+    var contextMenuElement = null;
+    var selectedExplorerItem = null;
+    var snippetSession = null;
+    var lastDeletedItem = null;
+    var currentHintQuery = '';
+    var lastPersistTime = null;
+
+    var fileExplorer = document.getElementById('fileExplorer');
+    var tabsContainer = document.getElementById('tabs');
+    var editorContainer = document.getElementById('editorContainer');
+    var previewPane = document.getElementById('previewPane');
+    var previewFrame = document.getElementById('previewFrame');
+    var cursorPositionEl = document.getElementById('cursorPosition');
+    var fileLanguageEl = document.getElementById('fileLanguage');
+    var sidebar = document.getElementById('sidebar');
+    var resizeHandle = document.getElementById('resizeHandle');
+    var fileInput = document.getElementById('fileInput');
+    var folderInput = document.getElementById('folderInput');
+    var imageInput = document.getElementById('imageInput');
+    var jsonInput = document.getElementById('jsonInput');
+    var previewStatus = document.getElementById('previewStatus');
+    var persistText = document.getElementById('persistText');
+    var saveStatus = document.getElementById('saveStatus');
+    var dirtyCountEl = document.getElementById('dirtyCount');
+
+    // ============================================================
+    // PERSISTENCE — localStorage
+    // ============================================================
+    function serializeWorkspace() {
+        // Save fileSystem + list of open files + active file + collapsed state
+        return {
+            version: 1,
+            timestamp: Date.now(),
+            fileSystem: fileSystem,
+            openFiles: openFiles.map(function (f) {
+                return { path: f.path, name: f.name, language: f.language, type: f.type, content: f.content };
+            }),
+            activeFilePath: activeFilePath,
+            collapsedFolders: collapsedFolders
+        };
+    }
+
+    function saveToBrowser(silent) {
+        try {
+            var data = serializeWorkspace();
+            var json = JSON.stringify(data);
+            var sizeKB = Math.round(json.length / 1024);
+
+            // Warn if getting large (localStorage limit is usually 5-10MB)
+            if (sizeKB > 4500) {
+                showToast('Workspace too large for browser storage (' + sizeKB + 'KB)', 'error');
+                return false;
+            }
+
+            localStorage.setItem(STORAGE_KEY, json);
+            lastPersistTime = new Date();
+            updatePersistIndicator();
+            if (!silent) {
+                showToast('Saved to browser (' + sizeKB + 'KB)', 'success');
+            }
+            return true;
+        } catch (e) {
+            console.error('Save error:', e);
+            if (!silent) {
+                showToast('Save failed: ' + (e.name === 'QuotaExceededError' ? 'Storage full' : e.message), 'error');
+            }
+            return false;
+        }
+    }
+
+    function loadFromBrowser() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return false;
+            var data = JSON.parse(raw);
+            if (!data || data.version !== 1 || !data.fileSystem) return false;
+
+            fileSystem = data.fileSystem;
+            collapsedFolders = data.collapsedFolders || {};
+
+            // Restore open files
+            openFiles = (data.openFiles || []).map(function (f) {
+                return {
+                    path: f.path, name: f.name, language: f.language,
+                    type: f.type || 'text', content: f.content, modified: false
+                };
+            });
+            // Ensure active file exists
+            if (data.activeFilePath && getFileByPath(data.activeFilePath)) {
+                activeFilePath = data.activeFilePath;
+            } else {
+                activeFilePath = null;
+            }
+            lastPersistTime = new Date(data.timestamp);
+            return true;
+        } catch (e) {
+            console.error('Load error:', e);
+            return false;
+        }
+    }
+
+    function clearBrowserStorage() {
+        try {
+            localStorage.removeItem(STORAGE_KEY);
+            lastPersistTime = null;
+            updatePersistIndicator();
+            showToast('Browser storage cleared', 'success');
+        } catch (e) {
+            showToast('Failed to clear: ' + e.message, 'error');
+        }
+    }
+
+    function updatePersistIndicator() {
+        if (!lastPersistTime) {
+            persistText.textContent = 'Not saved';
+            return;
+        }
+        var diff = Date.now() - lastPersistTime.getTime();
+        var secs = Math.floor(diff / 1000);
+        if (secs < 10) persistText.textContent = 'Saved just now';
+        else if (secs < 60) persistText.textContent = 'Saved ' + secs + 's ago';
+        else if (secs < 3600) persistText.textContent = 'Saved ' + Math.floor(secs / 60) + 'm ago';
+        else persistText.textContent = 'Saved ' + lastPersistTime.toLocaleTimeString();
+    }
+
+    // Auto-persist after edits (debounced longer than auto-save)
+    function schedulePersist() {
+        clearTimeout(autoPersistTimer);
+        autoPersistTimer = setTimeout(function () {
+            saveToBrowser(true);
+        }, 1500);
+    }
+
+    // Update persist indicator every 10 seconds
+    setInterval(updatePersistIndicator, 10000);
+
+    // ============================================================
+    // DOWNLOAD — ZIP / JSON / single file
+    // ============================================================
+    function downloadProjectAsZip() {
+        if (typeof JSZip === 'undefined') {
+            showToast('JSZip not loaded — check your internet', 'error');
+            return;
+        }
+
+        showToast('Building ZIP...', 'info');
+        var zip = new JSZip();
+
+        function addToZip(folder, zipFolder) {
+            for (var name in folder) {
+                if (!folder.hasOwnProperty(name)) continue;
+                var item = folder[name];
+                if (item.type === 'folder') {
+                    var subZip = zipFolder.folder(name);
+                    if (subZip) addToZip(item.children || {}, subZip);
+                } else if (item.type === 'image') {
+                    // Convert data URL to binary
+                    var parts = item.content.split(',');
+                    if (parts.length === 2) {
+                        var meta = parts[0];
+                        var data = parts[1];
+                        var isBase64 = meta.indexOf('base64') !== -1;
+                        zipFolder.file(name, data, { base64: isBase64 });
+                    }
+                } else {
+                    zipFolder.file(name, item.content || '');
+                }
+            }
+        }
+
+        addToZip(fileSystem, zip);
+
+        zip.generateAsync({ type: 'blob' }).then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'my-project-' + timestamp() + '.zip';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+            showToast('ZIP downloaded!', 'success');
+        }).catch(function (err) {
+            showToast('ZIP failed: ' + err.message, 'error');
+        });
+    }
+
+    function downloadWorkspaceAsJson() {
+        var data = serializeWorkspace();
+        var json = JSON.stringify(data, null, 2);
+        var blob = new Blob([json], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'workspace-' + timestamp() + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+        showToast('Workspace JSON downloaded', 'success');
+    }
+
+    function downloadSingleFile(path, name, item) {
+        if (item.type === 'image') {
+            var a = document.createElement('a');
+            a.href = item.content;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } else {
+            var blob = new Blob([item.content || ''], { type: 'text/plain;charset=utf-8' });
+            var url = URL.createObjectURL(blob);
+            var a2 = document.createElement('a');
+            a2.href = url;
+            a2.download = name;
+            document.body.appendChild(a2);
+            a2.click();
+            document.body.removeChild(a2);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+        }
+        showToast('Downloaded ' + name, 'success');
+    }
+
+    function timestamp() {
+        var d = new Date();
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' +
+               pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+    }
+
+    // ============================================================
+    // IMPORT — JSON
+    // ============================================================
+    jsonInput.addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+            try {
+                var data = JSON.parse(reader.result);
+                if (!data || !data.fileSystem) {
+                    showToast('Invalid workspace JSON', 'error');
+                    return;
+                }
+                showConfirmModal(
+                    'Load Workspace',
+                    'This will replace your current workspace with ' +
+                    countFiles(data.fileSystem) + ' file(s). Continue?',
+                    'Load',
+                    function () {
+                        fileSystem = data.fileSystem;
+                        collapsedFolders = data.collapsedFolders || {};
+                        openFiles = (data.openFiles || []).map(function (f) {
+                            return {
+                                path: f.path, name: f.name, language: f.language,
+                                type: f.type || 'text', content: f.content, modified: false
+                            };
+                        });
+                        activeFilePath = null;
+                        if (data.activeFilePath && getFileByPath(data.activeFilePath)) {
+                            activeFilePath = data.activeFilePath;
+                        }
+                        renderFileExplorer();
+                        renderTabs();
+                        // Open the active file or fallback
+                        if (activeFilePath) {
+                            var f = getFileByPath(activeFilePath);
+                            if (f) openFileInEditor(activeFilePath, activeFilePath.split('/').pop(), f);
+                        } else if (openFiles.length > 0) {
+                            switchToFile(openFiles[0].path);
+                        } else {
+                            var firstHtml = findFileByExt('.html');
+                            if (firstHtml) openFileInEditor(firstHtml.path, firstHtml.name, getFileByPath(firstHtml.path));
+                        }
+                        updateTitleBar();
+                        if (previewVisible) refreshPreview();
+                        saveToBrowser(true);
+                        showToast('Workspace loaded!', 'success');
+                    }
+                );
+            } catch (err) {
+                showToast('JSON parse error: ' + err.message, 'error');
+            }
+            jsonInput.value = '';
+        };
+        reader.readAsText(file);
+    });
+
+    function countFiles(folder) {
+        var n = 0;
+        for (var k in folder) {
+            if (!folder.hasOwnProperty(k)) continue;
+            if (folder[k].type === 'folder') n += countFiles(folder[k].children || {});
+            else n++;
+        }
+        return n;
+    }
+
+    // ============================================================
+    // SAVE MENU
+    // ============================================================
+    function openSaveMenu() {
+        var sidebarWasCollapsed = sidebar.classList.contains('collapsed');
+        sidebar.classList.remove('collapsed');
+        document.querySelectorAll('.activity-bar .icon').forEach(function (i) { i.classList.remove('active'); });
+        var saveIcon = document.querySelector('.activity-bar .icon[data-view="save"]');
+        if (saveIcon) saveIcon.classList.add('active');
+        document.getElementById('sidebarTitle').textContent = 'Save & Export';
+        document.getElementById('sidebarActions').innerHTML =
+            '<i class="fas fa-times close-sidebar" title="Close Sidebar (Ctrl+B)" onclick="closeSidebar()"></i>';
+        renderSaveMenu();
+    }
+
+    function renderSaveMenu() {
+        var fileCount = countFiles(fileSystem);
+        var sizeKB = Math.round(JSON.stringify(fileSystem).length / 1024);
+        var hasSaved = !!localStorage.getItem(STORAGE_KEY);
+
+        var html = '';
+
+        // Save section
+        html += '<div style="padding:10px 15px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;font-weight:600;">Save</div>';
+
+        html += renderSaveItem('fa-database', '#4ec9b0',
+            'Save to Browser',
+            hasSaved ? 'Update workspace in localStorage' : 'Persist workspace across refreshes',
+            'saveToBrowser()');
+
+        // Download section
+        html += '<div style="padding:14px 15px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;font-weight:600;border-top:1px solid #333;margin-top:6px;">Download</div>';
+
+        html += renderSaveItem('fa-file-archive', '#f1e05a',
+            'Download Project as ZIP',
+            'Export all ' + fileCount + ' files as .zip',
+            'downloadProjectAsZip()');
+
+        html += renderSaveItem('fa-file-code', '#c586c0',
+            'Export Workspace as JSON',
+            'Backup entire workspace (incl. open tabs)',
+            'downloadWorkspaceAsJson()');
+
+        // Import section
+        html += '<div style="padding:14px 15px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;font-weight:600;border-top:1px solid #333;margin-top:6px;">Load</div>';
+
+        html += renderSaveItem('fa-file-upload', '#4ec9b0',
+            'Load Workspace from JSON',
+            'Restore a previously exported backup',
+            'jsonInput.click()');
+
+        html += renderSaveItem('fa-folder-open', '#519aba',
+            'Import Files / Folder / Image',
+            'Add files to the current workspace',
+            'triggerImport()');
+
+        // Danger section
+        html += '<div style="padding:14px 15px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;font-weight:600;border-top:1px solid #333;margin-top:6px;">Reset</div>';
+
+        html += renderSaveItem('fa-trash-alt', '#f48771',
+            'Clear Browser Storage',
+            'Forget the saved workspace',
+            'confirmClearStorage()', true);
+
+        // Info footer
+        html += '<div style="padding:15px;margin-top:10px;background:#2a2d2e;border-radius:4px;font-size:11px;color:#858585;line-height:1.6;">' +
+            '<i class="fas fa-info-circle" style="color:#519aba;"></i><br>' +
+            'Workspace size: <strong style="color:#d4d4d4;">' + sizeKB + 'KB</strong><br>' +
+            'Files: <strong style="color:#d4d4d4;">' + fileCount + '</strong><br>' +
+            'Auto-saved to browser every 1.5s after edits.' +
+            '</div>';
+
+        fileExplorer.innerHTML = html;
+    }
+
+    function renderSaveItem(icon, color, title, subtitle, onclick, danger) {
+        return '<div class="save-menu-item" onclick="' + onclick + '">' +
+            '<div class="icon-wrap" style="background:' + color + '22;color:' + color + ';">' +
+            '<i class="fas ' + icon + '"></i></div>' +
+            '<div class="text"><div class="title">' + title + '</div>' +
+            '<div class="subtitle">' + subtitle + '</div></div>' +
+            '</div>';
+    }
+
+    function confirmClearStorage() {
+        showConfirmModal(
+            'Clear Browser Storage',
+            'This will delete the workspace saved in your browser. Your current unsaved changes will remain until you refresh the page. Continue?',
+            'Clear',
+            clearBrowserStorage
+        );
+    }
+
+    // ============================================================
+    // SNIPPET ENGINE
+    // ============================================================
+    function insertSnippetTemplate(cm, template, from, to) {
+        var insertText = '';
+        var placeholders = [];
+        var regex = /\$\{(\d+)(?::([^}]*))?\}/g;
+        var lastIndex = 0;
+        var m;
+        while ((m = regex.exec(template)) !== null) {
+            insertText += template.slice(lastIndex, m.index);
+            placeholders.push({ num: parseInt(m[1], 10), text: m[2] || '', offset: insertText.length, length: (m[2] || '').length });
+            insertText += m[2] || '';
+            lastIndex = regex.lastIndex;
+        }
+        insertText += template.slice(lastIndex);
+
+        clearSnippetMarks();
+        snippetSession = null;
+        cm.replaceRange(insertText, from, to);
+
+        function advance(pos, text) {
+            var parts = text.split('\n');
+            if (parts.length === 1) return { line: pos.line, ch: pos.ch + parts[0].length };
+            return { line: pos.line + parts.length - 1, ch: parts[parts.length - 1].length };
+        }
+        placeholders.forEach(function (ph) {
+            var before = insertText.slice(0, ph.offset);
+            ph.start = advance({ line: from.line, ch: from.ch }, before);
+            ph.end = advance(ph.start, ph.text);
+        });
+        placeholders.sort(function (a, b) { return a.num - b.num; });
+        if (placeholders.length === 0) {
+            cm.setCursor(advance({ line: from.line, ch: from.ch }, insertText));
+            return;
+        }
+        snippetSession = { cm: cm, placeholders: placeholders, current: 0, doc: cm.getDoc() };
+        var first = placeholders[0];
+        cm.setSelection(first.start, first.end);
+        markPlaceholder(first);
+    }
+    function markPlaceholder(ph) {
+        if (!ph || !snippetSession) return;
+        try {
+            ph._mark = snippetSession.doc.markText(ph.start, ph.end, { className: 'cm-snippet-placeholder', inclusiveLeft: false, inclusiveRight: false });
+        } catch (e) {}
+    }
+    function clearSnippetMarks() {
+        if (snippetSession) {
+            snippetSession.placeholders.forEach(function (ph) {
+                if (ph._mark) { try { ph._mark.clear(); } catch (e) {} ph._mark = null; }
+            });
+        }
+    }
+    function endSnippetSession() {
+        if (!snippetSession) return;
+        clearSnippetMarks();
+        snippetSession = null;
+    }
+    function gotoNextPlaceholder(cm) {
+        if (!snippetSession || snippetSession.cm !== cm) return false;
+        var next = snippetSession.current + 1;
+        if (next >= snippetSession.placeholders.length) { endSnippetSession(); return false; }
+        snippetSession.current = next;
+        var ph = snippetSession.placeholders[next];
+        cm.setSelection(ph.start, ph.end);
+        markPlaceholder(ph);
+        return true;
+    }
+    function gotoPrevPlaceholder(cm) {
+        if (!snippetSession || snippetSession.cm !== cm) return false;
+        var prev = snippetSession.current - 1;
+        if (prev < 0) return false;
+        snippetSession.current = prev;
+        var ph = snippetSession.placeholders[prev];
+        cm.setSelection(ph.start, ph.end);
+        markPlaceholder(ph);
+        return true;
+    }
+
+    // ============================================================
+    // FUZZY SCORING
+    // ============================================================
+    function fuzzyScore(query, target) {
+        if (!query) return { score: 0, matches: [] };
+        if (!target) return null;
+        var q = query.toLowerCase(), t = target.toLowerCase();
+        var qLen = q.length, tLen = t.length;
+
+        if (q === t) {
+            var em = [];
+            for (var i = 0; i < qLen; i++) em.push(i);
+            return { score: 10000, matches: em };
+        }
+        if (t.indexOf(q) === 0) {
+            var pm = [];
+            for (var j = 0; j < qLen; j++) pm.push(j);
+            return { score: 5000 + (qLen / tLen) * 500 - tLen, matches: pm };
+        }
+        var subIdx = t.indexOf(q);
+        if (subIdx > 0) {
+            var prevChar = t.charAt(subIdx - 1);
+            var isBoundary = /[.\-_\/\s]/.test(prevChar);
+            var sm = [];
+            for (var k = 0; k < qLen; k++) sm.push(subIdx + k);
+            return { score: (isBoundary ? 2000 : 1000) - subIdx * 5, matches: sm };
+        }
+
+        var score = 0, matches = [], lastMatch = -1, ti = 0;
+        for (var qi = 0; qi < qLen; qi++) {
+            var qch = q.charAt(qi);
+            var found = -1;
+            for (var t2 = ti; t2 < tLen; t2++) {
+                if (t.charAt(t2) === qch) { found = t2; break; }
+            }
+            if (found === -1) return null;
+            if (lastMatch >= 0 && found === lastMatch + 1) score += 60;
+            if (found === 0 || /[.\-_\/\s]/.test(t.charAt(found - 1))) score += 40;
+            else if (found > 0 && target.charAt(found) !== t.charAt(found) && /[a-z]/.test(target.charAt(found - 1))) score += 30;
+            if (qi === 0 && found === 0) score += 50;
+            if (lastMatch >= 0 && found > lastMatch + 1) score -= (found - lastMatch - 1) * 4;
+            matches.push(found);
+            lastMatch = found;
+            ti = found + 1;
+        }
+        score -= (tLen - qLen) * 2;
+        if (score <= 0) return null;
+        return { score: score, matches: matches };
+    }
+
+    function renderMatchHighlight(label, matches) {
+        if (!matches || matches.length === 0) return escapeHtml(label);
+        var result = '', matchSet = {};
+        matches.forEach(function (i) { matchSet[i] = true; });
+        for (var i = 0; i < label.length; i++) {
+            var ch = escapeHtml(label.charAt(i));
+            result += matchSet[i] ? '<span class="hint-match">' + ch + '</span>' : ch;
+        }
+        return result;
+    }
+
+    // ============================================================
+    // HINT ENGINE
+    // ============================================================
+    function getCurrentWord(cm) {
+        var cur = cm.getCursor();
+        var line = cm.getLine(cur.line);
+        var end = cur.ch, start = end;
+        while (start > 0 && /[\w\.\-$]/.test(line.charAt(start - 1))) start--;
+        return { word: line.slice(start, end), start: start, end: end };
+    }
+    function getActiveLang(cm) {
+        var mode = cm.getOption('mode') || 'javascript';
+        if (mode === 'htmlmixed') return 'htmlmixed';
+        if (mode === 'css') return 'css';
+        return 'javascript';
+    }
+    function computeHints(cm) {
+        var cur = cm.getCursor();
+        var line = cm.getLine(cur.line);
+        var before = line.slice(0, cur.ch);
+        if (/^\s*(\/\/|\*|\/\*)/.test(before)) return null;
+        var wordInfo = getCurrentWord(cm);
+        var query = wordInfo.word;
+        if (query.length < 1) return null;
+        var lastCh = query.charAt(query.length - 1);
+        if (!/[\w\.\-$]/.test(lastCh)) return null;
+        var lang = getActiveLang(cm);
+        var snippets = SNIPPETS[lang] || [];
+        var apis = LANGUAGE_APIS[lang] || [];
+        var seen = {}, candidates = [];
+        function addC(item) { if (seen[item.label]) return; seen[item.label] = true; candidates.push(item); }
+        snippets.forEach(addC);
+        apis.forEach(addC);
+        var docText = cm.getValue();
+        var wordRegex = /\b[a-zA-Z_$][a-zA-Z0-9_$]{2,}\b/g;
+        var mm;
+        while ((mm = wordRegex.exec(docText)) !== null) {
+            var w = mm[0];
+            if (!seen[w] && w !== query) { seen[w] = true; candidates.push({ label: w, detail: 'from document', type: 'variable' }); }
+        }
+        var scored = [];
+        for (var i = 0; i < candidates.length; i++) {
+            var c = candidates[i];
+            var result = fuzzyScore(query, c.label);
+            if (result !== null) {
+                var bonus = c.type === 'snippet' ? 150 : 0;
+                scored.push({ candidate: c, score: result.score + bonus, matches: result.matches });
+            }
+        }
+        if (scored.length === 0) return null;
+        scored.sort(function (a, b) { return b.score - a.score; });
+        scored = scored.slice(0, 60);
+        var list = scored.map(function (s) {
+            var c = s.candidate;
+            var item = { text: c.label, displayText: c.label, detail: c.detail, type: c.type, _matches: s.matches, _snippet: c.insert };
+            if (c.insert) {
+                item.hint = function (cm2, data, completion) {
+                    insertSnippetTemplate(cm2, c.insert, completion.from, completion.to);
+                };
+            }
+            return item;
+        });
+        currentHintQuery = query;
+        return { list: list, from: CodeMirror.Pos(cur.line, wordInfo.start), to: cur };
+    }
+    function renderHintItem(el, data) {
+        var type = data.type || 'variable';
+        var prefixMap = { snippet: 'S', keyword: 'K', function: 'ƒ', method: 'ƒ', property: 'P', class: 'C', variable: 'V', tag: 'T', attribute: 'A', 'css-prop': '{}' };
+        var prefix = prefixMap[type] || '·';
+        var label = data.displayText || data.text;
+        var matches = data._matches || [];
+        var highlighted = renderMatchHighlight(label, matches);
+        var detailHtml = data.detail ? '<span class="hint-detail">' + escapeHtml(data.detail) + '</span>' : '';
+        el.innerHTML = '<span class="hint-prefix ' + type + '">' + prefix + '</span>' +
+                       '<span class="hint-label">' + highlighted + '</span>' + detailHtml;
+    }
+
+    // ============================================================
+    // TAB / ENTER
+    // ============================================================
+    function handleTab(cm) {
+        if (cm.state.completionActive) { cm.state.completionActive.pick(); return; }
+        if (snippetSession && snippetSession.cm === cm) { if (gotoNextPlaceholder(cm)) return; }
+        var wordInfo = getCurrentWord(cm);
+        var word = wordInfo.word;
+        if (word) {
+            var lang = getActiveLang(cm);
+            var snips = SNIPPETS[lang] || [];
+            var exact = null;
+            for (var i = 0; i < snips.length; i++) if (snips[i].label === word) { exact = snips[i]; break; }
+            if (exact && exact.insert) {
+                insertSnippetTemplate(cm, exact.insert, CodeMirror.Pos(cm.getCursor().line, wordInfo.start), cm.getCursor());
+                return;
+            }
+        }
+        if (cm.somethingSelected()) cm.indentSelection('add');
+        else cm.replaceSelection('    ', 'end');
+    }
+    function handleShiftTab(cm) {
+        if (snippetSession && snippetSession.cm === cm) gotoPrevPlaceholder(cm);
+        else cm.indentSelection('subtract');
+    }
+    function handleEnter(cm) {
+        if (cm.state.completionActive) { cm.state.completionActive.pick(); return; }
+        return CodeMirror.Pass;
+    }
+    function triggerHintOnInput(cm, change) {
+        if (change.origin !== '+input' && change.origin !== 'paste') return;
+        var typed = change.text[0];
+        if (!typed) return;
+        if (!/[a-zA-Z_$\.]/.test(typed)) return;
+        clearTimeout(cm._hintTimer);
+        cm._hintTimer = setTimeout(function () {
+            if (cm.state.completionActive) return;
+            if (computeHints(cm)) {
+                cm.showHint({ hint: computeHints, completeSingle: false, alignWithWord: true, closeOnUnfocus: true });
+            }
+        }, 120);
+    }
+
+    // ============================================================
+    // EDITOR
+    // ============================================================
+    function initEditor() {
+        editor = CodeMirror(editorContainer, {
+            value: '', mode: 'javascript', theme: 'dracula',
+            lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false,
+            smartIndent: true, matchBrackets: true, autoCloseBrackets: true, foldGutter: true,
+            gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+            lineWrapping: true,
+            extraKeys: {
+                'Ctrl-S': function () { forceSave(); },
+                'Cmd-S': function () { forceSave(); },
+                'Ctrl-Shift-S': function () { openSaveMenu(); },
+                'Cmd-Shift-S': function () { openSaveMenu(); },
+                'Ctrl-B': function () { toggleSidebar(); },
+                'Cmd-B': function () { toggleSidebar(); },
+                'F5': function () { togglePreview(); },
+                'Ctrl-Space': function (cm) { cm.showHint({ hint: computeHints, completeSingle: false, alignWithWord: true }); },
+                'Cmd-Space': function (cm) { cm.showHint({ hint: computeHints, completeSingle: false, alignWithWord: true }); },
+                'Tab': handleTab,
+                'Shift-Tab': handleShiftTab,
+                'Enter': handleEnter,
+                'Esc': function (cm) {
+                    if (snippetSession) { endSnippetSession(); return; }
+                    if (cm.state.completionActive) cm.state.completionActive.close();
+                }
+            }
+        });
+        editor.setOption('hintOptions', {
+            hint: computeHints, completeSingle: false, alignWithWord: true,
+            closeOnUnfocus: true, render: renderHintItem
+        });
+        editor.on('inputRead', triggerHintOnInput);
+        editor.on('change', function (cm, change) {
+            if (change.origin === '+input' && (change.text[0] === '.' || change.text[0] === '>')) {
+                setTimeout(function () {
+                    if (cm.state.completionActive) return;
+                    if (computeHints(cm)) {
+                        cm.showHint({ hint: computeHints, completeSingle: false, alignWithWord: true });
+                    }
+                }, 80);
+            }
+        });
+        editor.on('cursorActivity', function () {
+            var pos = editor.getCursor();
+            cursorPositionEl.textContent = 'Ln ' + (pos.line + 1) + ', Col ' + (pos.ch + 1);
+            if (snippetSession && snippetSession.cm === editor) {
+                var cur = editor.getCursor();
+                var inRange = snippetSession.placeholders.some(function (ph) {
+                    return (cur.line === ph.start.line && cur.ch >= ph.start.ch && cur.ch <= ph.end.ch) ||
+                           (cur.line > ph.start.line && cur.line < ph.end.line);
+                });
+                if (!inRange && !editor.somethingSelected()) endSnippetSession();
+            }
+        });
+        editor.on('change', function () {
+            if (!activeFilePath) return;
+            var file = findOpenFile(activeFilePath);
+            if (!file || file.type === 'image') return;
+            file.content = editor.getValue();
+            file.modified = true;
+            renderTabs();
+            updateDirtyCount();
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = setTimeout(function () { autoSave(activeFilePath); }, 800);
+            // Schedule browser persistence
+            schedulePersist();
+        });
+    }
+
+    function updateDirtyCount() {
+        var n = 0;
+        for (var i = 0; i < openFiles.length; i++) if (openFiles[i].modified) n++;
+        dirtyCountEl.textContent = n;
+    }
+
+    // ============================================================
+    // AUTO SAVE
+    // ============================================================
+    function autoSave(path) {
+        var file = findOpenFile(path);
+        if (!file) return;
+        var fsFile = getFileByPath(path);
+        if (fsFile) fsFile.content = file.content;
+        file.modified = false;
+        renderTabs();
+        updateDirtyCount();
+        if (previewVisible) {
+            clearTimeout(autoPreviewTimer);
+            autoPreviewTimer = setTimeout(refreshPreview, 300);
+        }
+    }
+    function forceSave() {
+        if (!activeFilePath) { showToast('No file to save', 'info'); return; }
+        var file = findOpenFile(activeFilePath);
+        if (!file) return;
+        var fsFile = getFileByPath(activeFilePath);
+        if (fsFile) fsFile.content = file.content;
+        file.modified = false;
+        renderTabs();
+        updateDirtyCount();
+        var ok = saveToBrowser(true);
+        if (ok) showToast('Saved ' + file.name + ' + workspace', 'success');
+        else showToast('Saved ' + file.name + ' (browser save failed)', 'info');
+    }
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+    function findOpenFile(path) {
+        for (var i = 0; i < openFiles.length; i++) if (openFiles[i].path === path) return openFiles[i];
+        return null;
+    }
+    function getFileByPath(path) {
+        if (!path) return null;
+        var parts = path.split('/');
+        var current = fileSystem;
+        for (var i = 0; i < parts.length - 1; i++) {
+            if (!current[parts[i]] || current[parts[i]].type !== 'folder') return null;
+            current = current[parts[i]].children;
+        }
+        return current[parts[parts.length - 1]];
+    }
+    function getParentFolder(path) {
+        var parts = path.split('/');
+        parts.pop();
+        if (parts.length === 0) return { folder: fileSystem, path: '' };
+        var current = fileSystem;
+        for (var i = 0; i < parts.length; i++) {
+            if (!current[parts[i]] || current[parts[i]].type !== 'folder') return null;
+            current = current[parts[i]].children;
+        }
+        return { folder: current, path: parts.join('/') };
+    }
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ============================================================
+    // FILE EXPLORER
+    // ============================================================
+    function renderFileExplorer() {
+        fileExplorer.innerHTML = '<div class="drop-hint"><i class="fas fa-cloud-upload-alt" style="font-size:32px;display:block;margin-bottom:8px;"></i>Drop files here to import</div>';
+        var entries = [];
+        for (var k in fileSystem) if (fileSystem.hasOwnProperty(k)) entries.push([k, fileSystem[k]]);
+        if (entries.length === 0) {
+            var empty = document.createElement('div');
+            empty.className = 'empty-state';
+            empty.innerHTML = '<i class="fas fa-folder-open"></i><p>No files yet</p><button onclick="createNewFile()">Create a file</button>';
+            fileExplorer.appendChild(empty);
+            return;
+        }
+        entries.sort(function (a, b) {
+            if (a[1].type === 'folder' && b[1].type !== 'folder') return -1;
+            if (a[1].type !== 'folder' && b[1].type === 'folder') return 1;
+            return a[0].localeCompare(b[0]);
+        });
+        for (var i = 0; i < entries.length; i++) renderItem(entries[i][0], entries[i][1], '', fileExplorer);
+    }
+    function getFileIcon(name, item) {
+        if (item.type === 'image') return { class: 'fa-file-image image-icon', color: '#a074c4' };
+        if (name.endsWith('.js')) return { class: 'fa-file-code js-icon', color: '#f1e05a' };
+        if (name.endsWith('.html')) return { class: 'fa-file-code html-icon', color: '#e34c26' };
+        if (name.endsWith('.css')) return { class: 'fa-file-code css-icon', color: '#563d7c' };
+        if (name.endsWith('.json')) return { class: 'fa-file-code json-icon', color: '#cbcb41' };
+        if (/\.(png|jpg|jpeg|gif|svg|webp|bmp|ico)$/i.test(name)) return { class: 'fa-file-image image-icon', color: '#a074c4' };
+        return { class: 'fa-file', color: '#519aba' };
+    }
+    function renderItem(name, item, path, container) {
+        var fullPath = path ? (path + '/' + name) : name;
+        var isSelected = selectedExplorerItem && selectedExplorerItem.path === fullPath;
+
+        if (item.type === 'folder') {
+            var isCollapsed = !!collapsedFolders[fullPath];
+            var folderEl = document.createElement('div');
+            folderEl.className = 'file-item folder' + (isSelected ? ' selected' : '');
+            folderEl.innerHTML =
+                '<i class="fas fa-chevron-down folder-toggle' + (isCollapsed ? ' collapsed' : '') + '"></i>' +
+                '<i class="fas fa-folder' + (isCollapsed ? '' : '-open') + ' folder-icon"></i>' +
+                '<span class="item-name">' + escapeHtml(name) + '</span>' +
+                '<span class="item-actions">' +
+                    '<i class="fas fa-file" title="New File" data-action="new-file"></i>' +
+                    '<i class="fas fa-folder-plus" title="New Folder" data-action="new-folder"></i>' +
+                    '<i class="fas fa-download" title="Download ZIP" data-action="download"></i>' +
+                    '<i class="fas fa-trash" title="Delete folder (Del)" data-action="delete"></i>' +
+                '</span>';
+            folderEl.addEventListener('click', function (e) {
+                if (e.target.closest('.item-actions')) return;
+                selectedExplorerItem = { path: fullPath, name: name, isFolder: true };
+                if (collapsedFolders[fullPath]) delete collapsedFolders[fullPath];
+                else collapsedFolders[fullPath] = true;
+                renderFileExplorer();
+            });
+            folderEl.querySelectorAll('.item-actions i').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var action = btn.getAttribute('data-action');
+                    if (action === 'new-file') createNewFile(fullPath);
+                    else if (action === 'new-folder') createNewFolder(fullPath);
+                    else if (action === 'delete') deleteItem(fullPath, name, true);
+                    else if (action === 'download') downloadSingleFolderZip(fullPath, name);
+                });
+            });
+            folderEl.addEventListener('contextmenu', function (e) {
+                e.preventDefault();
+                selectedExplorerItem = { path: fullPath, name: name, isFolder: true };
+                renderFileExplorer();
+                showContextMenu(e.clientX, e.clientY, [
+                    { icon: 'fa-file', label: 'New File', action: function () { createNewFile(fullPath); } },
+                    { icon: 'fa-folder-plus', label: 'New Folder', action: function () { createNewFolder(fullPath); } },
+                    { divider: true },
+                    { icon: 'fa-i-cursor', label: 'Rename', action: function () { renameItem(fullPath, name); } },
+                    { icon: 'fa-file-archive', label: 'Download as ZIP', action: function () { downloadSingleFolderZip(fullPath, name); } },
+                    { divider: true },
+                    { icon: 'fa-trash', label: 'Delete', danger: true, action: function () { deleteItem(fullPath, name, true); } }
+                ]);
+            });
+            container.appendChild(folderEl);
+            if (!isCollapsed) {
+                var childrenContainer = document.createElement('div');
+                childrenContainer.className = 'file-children';
+                container.appendChild(childrenContainer);
+                var children = [];
+                var childrenObj = item.children || {};
+                for (var ck in childrenObj) if (childrenObj.hasOwnProperty(ck)) children.push([ck, childrenObj[ck]]);
+                children.sort(function (a, b) {
+                    if (a[1].type === 'folder' && b[1].type !== 'folder') return -1;
+                    if (a[1].type !== 'folder' && b[1].type === 'folder') return 1;
+                    return a[0].localeCompare(b[0]);
+                });
+                for (var i = 0; i < children.length; i++) renderItem(children[i][0], children[i][1], fullPath, childrenContainer);
+            }
+        } else {
+            var fileEl = document.createElement('div');
+            fileEl.className = 'file-item' + (activeFilePath === fullPath ? ' active' : '') + (isSelected ? ' selected' : '');
+            var iconInfo = getFileIcon(name, item);
+            var openFile = findOpenFile(fullPath);
+            var isModified = openFile && openFile.modified;
+            fileEl.innerHTML =
+                '<i class="fas ' + iconInfo.class + '" style="color:' + iconInfo.color + ';"></i>' +
+                '<span class="item-name">' + escapeHtml(name) + (isModified ? ' ●' : '') + '</span>' +
+                '<span class="item-actions">' +
+                    '<i class="fas fa-download" title="Download" data-action="download"></i>' +
+                    '<i class="fas fa-trash" title="Delete (Del)" data-action="delete"></i>' +
+                '</span>';
+            fileEl.addEventListener('click', function (e) {
+                if (e.target.closest('.item-actions')) return;
+                selectedExplorerItem = { path: fullPath, name: name, isFolder: false };
+                openFileInEditor(fullPath, name, item);
+            });
+            fileEl.querySelectorAll('.item-actions i').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var action = btn.getAttribute('data-action');
+                    if (action === 'delete') deleteItem(fullPath, name, false);
+                    else if (action === 'download') downloadSingleFile(fullPath, name, item);
+                });
+            });
+            fileEl.addEventListener('contextmenu', function (e) {
+                e.preventDefault();
+                selectedExplorerItem = { path: fullPath, name: name, isFolder: false };
+                renderFileExplorer();
+                showContextMenu(e.clientX, e.clientY, [
+                    { icon: 'fa-edit', label: 'Open', action: function () { openFileInEditor(fullPath, name, item); } },
+                    { icon: 'fa-i-cursor', label: 'Rename', action: function () { renameItem(fullPath, name); } },
+                    { icon: 'fa-download', label: 'Download', action: function () { downloadSingleFile(fullPath, name, item); } },
+                    { divider: true },
+                    { icon: 'fa-trash', label: 'Delete', danger: true, action: function () { deleteItem(fullPath, name, false); } }
+                ]);
+            });
+            container.appendChild(fileEl);
+        }
+    }
+
+    function downloadSingleFolderZip(folderPath, folderName) {
+        if (typeof JSZip === 'undefined') { showToast('JSZip not loaded', 'error'); return; }
+        var folder = getFileByPath(folderPath);
+        if (!folder) return;
+        var zip = new JSZip();
+        function add(folder2, zipFolder) {
+            for (var name in folder2) {
+                if (!folder2.hasOwnProperty(name)) continue;
+                var item = folder2[name];
+                if (item.type === 'folder') { var sub = zipFolder.folder(name); if (sub) add(item.children || {}, sub); }
+                else if (item.type === 'image') {
+                    var parts = item.content.split(',');
+                    if (parts.length === 2) zipFolder.file(name, parts[1], { base64: parts[0].indexOf('base64') !== -1 });
+                } else zipFolder.file(name, item.content || '');
+            }
+        }
+        add(folder.children || {}, zip);
+        zip.generateAsync({ type: 'blob' }).then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = folderName + '-' + timestamp() + '.zip';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+            showToast('Downloaded ' + folderName + '.zip', 'success');
+        });
+    }
+
+    // ============================================================
+    // FILE OPS
+    // ============================================================
+    function openFileInEditor(path, name, fileData) {
+        var existing = findOpenFile(path);
+        if (existing) { switchToFile(path); return; }
+        if (fileData.type === 'image') {
+            openFiles.push({ path: path, name: name, language: 'image', content: fileData.content, modified: false, type: 'image' });
+            switchToFile(path);
+            return;
+        }
+        var language = 'javascript';
+        if (name.endsWith('.html')) language = 'htmlmixed';
+        else if (name.endsWith('.css')) language = 'css';
+        else if (name.endsWith('.md')) language = 'markdown';
+        openFiles.push({ path: path, name: name, language: language, content: fileData.content, modified: false, type: 'text' });
+        switchToFile(path);
+    }
+    function switchToFile(path) {
+        var file = findOpenFile(path);
+        if (!file) return;
+        activeFilePath = path;
+        endSnippetSession();
+        if (file.type === 'image') {
+            editorContainer.innerHTML = '<div class="image-viewer"><img src="' + file.content + '" alt="' + escapeHtml(file.name) + '"></div>';
+            fileLanguageEl.textContent = 'Image';
+            cursorPositionEl.textContent = '—';
+        } else {
+            if (!editorContainer.querySelector('.CodeMirror')) {
+                editorContainer.innerHTML = '';
+                editor = null;
+                initEditor();
+            }
+            editor.setValue(file.content);
+            editor.setOption('mode', file.language);
+            file.modified = false;
+            editor.setCursor(0, 0);
+            editor.focus();
+            var langNames = { 'javascript': 'JavaScript', 'htmlmixed': 'HTML', 'css': 'CSS', 'markdown': 'Markdown' };
+            fileLanguageEl.textContent = langNames[file.language] || 'Plain Text';
+        }
+        renderTabs();
+        renderFileExplorer();
+        updateTitleBar();
+        updateDirtyCount();
+    }
+    function closeFile(path, event) {
+        if (event) event.stopPropagation();
+        var index = -1;
+        for (var i = 0; i < openFiles.length; i++) if (openFiles[i].path === path) { index = i; break; }
+        if (index === -1) return;
+        openFiles.splice(index, 1);
+        if (activeFilePath === path) {
+            if (openFiles.length > 0) switchToFile(openFiles[openFiles.length - 1].path);
+            else {
+                activeFilePath = null;
+                if (editor) { editor.setValue(''); editor.setOption('mode', 'javascript'); }
+                fileLanguageEl.textContent = 'JavaScript';
+                cursorPositionEl.textContent = 'Ln 1, Col 1';
+                renderTabs();
+                updateTitleBar();
+            }
+        } else renderTabs();
+        renderFileExplorer();
+    }
+    function updateTitleBar() {
+        var titleEl = document.querySelector('.title-bar .title');
+        if (activeFilePath) {
+            var file = findOpenFile(activeFilePath);
+            titleEl.textContent = 'Lightweight VS Code - ' + (file ? file.name : 'Untitled');
+        } else titleEl.textContent = 'Lightweight VS Code - Welcome';
+    }
+    function createNewFile(parentPath) {
+        parentPath = parentPath || '';
+        showInputModal('New File', 'Enter file name (e.g., index.html):', '', function (name) {
+            if (!name) return;
+            var targetFolder = parentPath ? getFileByPath(parentPath) : null;
+            var container = parentPath ? (targetFolder && targetFolder.children) : fileSystem;
+            if (!container) { showToast('Invalid location', 'error'); return; }
+            if (container[name]) { showToast('File already exists', 'error'); return; }
+            var language = 'javascript';
+            if (name.endsWith('.html')) language = 'htmlmixed';
+            else if (name.endsWith('.css')) language = 'css';
+            else if (name.endsWith('.md')) language = 'markdown';
+            container[name] = { type: 'file', language: language, content: '' };
+            if (parentPath) delete collapsedFolders[parentPath];
+            renderFileExplorer();
+            openFileInEditor(parentPath ? (parentPath + '/' + name) : name, name, container[name]);
+            showToast('Created ' + name, 'success');
+            schedulePersist();
+        });
+    }
+    function createNewFolder(parentPath) {
+        parentPath = parentPath || '';
+        showInputModal('New Folder', 'Enter folder name:', '', function (name) {
+            if (!name) return;
+            var targetFolder = parentPath ? getFileByPath(parentPath) : null;
+            var container = parentPath ? (targetFolder && targetFolder.children) : fileSystem;
+            if (!container) { showToast('Invalid location', 'error'); return; }
+            if (container[name]) { showToast('Folder already exists', 'error'); return; }
+            container[name] = { type: 'folder', children: {} };
+            if (parentPath) delete collapsedFolders[parentPath];
+            renderFileExplorer();
+            showToast('Created folder ' + name, 'success');
+            schedulePersist();
+        });
+    }
+    function renameItem(path, currentName) {
+        showInputModal('Rename', 'Enter new name:', currentName, function (newName) {
+            if (!newName || newName === currentName) return;
+            var parent = getParentFolder(path);
+            if (!parent) return;
+            if (parent.folder[newName]) { showToast('Name already exists', 'error'); return; }
+            var item = parent.folder[currentName];
+            if (!item) return;
+            delete parent.folder[currentName];
+            parent.folder[newName] = item;
+            var newPath = parent.path ? (parent.path + '/' + newName) : newName;
+            var openFile = findOpenFile(path);
+            if (openFile) {
+                openFile.path = newPath;
+                openFile.name = newName;
+                if (activeFilePath === path) activeFilePath = newPath;
+            }
+            renderFileExplorer(); renderTabs(); updateTitleBar();
+            showToast('Renamed to ' + newName, 'success');
+            schedulePersist();
+        });
+    }
+    function deleteItem(path, name, isFolder) {
+        var item = getFileByPath(path);
+        if (!item) return;
+        var itemCount = 0;
+        if (isFolder) {
+            (function count(folder) {
+                for (var k in folder) {
+                    if (!folder.hasOwnProperty(k)) continue;
+                    itemCount++;
+                    if (folder[k].type === 'folder') count(folder[k].children || {});
+                }
+            })(item.children || {});
+        }
+        var message = isFolder
+            ? 'Delete folder "' + name + '" and its ' + itemCount + ' item(s)?'
+            : 'Delete "' + name + '"?';
+        showConfirmModal(isFolder ? 'Delete Folder' : 'Delete File', message, 'Delete',
+            function () { performDelete(path, name, isFolder, item); });
+    }
+    function performDelete(path, name, isFolder, item) {
+        var parent = getParentFolder(path);
+        if (!parent) return;
+        lastDeletedItem = { parent: parent, path: path, name: name, item: JSON.parse(JSON.stringify(item)), isFolder: isFolder };
+        delete parent.folder[name];
+        openFiles = openFiles.filter(function (f) { return f.path !== path && f.path.indexOf(path + '/') !== 0; });
+        if (activeFilePath === path || (activeFilePath && activeFilePath.indexOf(path + '/') === 0)) {
+            if (openFiles.length > 0) switchToFile(openFiles[openFiles.length - 1].path);
+            else {
+                activeFilePath = null;
+                if (editor) { editor.setValue(''); editor.setOption('mode', 'javascript'); }
+                renderTabs(); updateTitleBar();
+            }
+        }
+        if (selectedExplorerItem && selectedExplorerItem.path === path) selectedExplorerItem = null;
+        renderFileExplorer();
+        updateDirtyCount();
+        schedulePersist();
+        showToastWithUndo('Deleted ' + name, function () {
+            if (!lastDeletedItem) return;
+            lastDeletedItem.parent.folder[lastDeletedItem.name] = lastDeletedItem.item;
+            renderFileExplorer();
+            schedulePersist();
+            showToast('Restored ' + lastDeletedItem.name, 'success');
+            lastDeletedItem = null;
+        });
+    }
+
+    // ============================================================
+    // IMPORT
+    // ============================================================
+    function triggerImport() {
+        showContextMenu(window.innerWidth / 2 - 100, window.innerHeight / 2, [
+            { icon: 'fa-file', label: 'Import Files', action: function () { fileInput.click(); } },
+            { icon: 'fa-folder-open', label: 'Import Folder', action: function () { folderInput.click(); } },
+            { icon: 'fa-image', label: 'Import Image', action: function () { imageInput.click(); } }
+        ]);
+    }
+    fileInput.addEventListener('change', function (e) { handleFileImport(e.target.files); });
+    folderInput.addEventListener('change', function (e) { handleFolderImport(e.target.files); });
+    imageInput.addEventListener('change', function (e) { handleFileImport(e.target.files); });
+    function handleFileImport(files) {
+        if (!files || files.length === 0) return;
+        var promises = [];
+        for (var i = 0; i < files.length; i++) promises.push(importFile(files[i], ''));
+        Promise.all(promises).then(function () {
+            renderFileExplorer();
+            showToast('Imported ' + files.length + ' file(s)', 'success');
+            fileInput.value = ''; imageInput.value = '';
+            if (previewVisible) refreshPreview();
+            schedulePersist();
+        });
+    }
+    function handleFolderImport(files) {
+        if (!files || files.length === 0) return;
+        var promises = [];
+        for (var i = 0; i < files.length; i++) promises.push(importFile(files[i], files[i].webkitRelativePath || files[i].name));
+        Promise.all(promises).then(function () {
+            renderFileExplorer();
+            showToast('Imported ' + files.length + ' files', 'success');
+            folderInput.value = '';
+            if (previewVisible) refreshPreview();
+            schedulePersist();
+        });
+    }
+    function importFile(file, relativePath) {
+        var pathParts = relativePath ? relativePath.split('/') : [file.name];
+        var current = fileSystem;
+        for (var i = 0; i < pathParts.length - 1; i++) {
+            var folderName = pathParts[i];
+            if (!current[folderName]) current[folderName] = { type: 'folder', children: {} };
+            if (current[folderName].type !== 'folder') return Promise.resolve();
+            current = current[folderName].children;
+        }
+        var fileName = pathParts[pathParts.length - 1];
+        var isImage = (file.type && file.type.indexOf('image/') === 0) || /\.(png|jpg|jpeg|gif|svg|webp|bmp|ico)$/i.test(fileName);
+        if (isImage) {
+            return readFileAsDataURL(file).then(function (content) {
+                current[fileName] = { type: 'image', language: 'image', content: content };
+            });
+        } else {
+            return readFileAsText(file).then(function (content) {
+                var language = 'javascript';
+                if (fileName.endsWith('.html')) language = 'htmlmixed';
+                else if (fileName.endsWith('.css')) language = 'css';
+                else if (fileName.endsWith('.md')) language = 'markdown';
+                current[fileName] = { type: 'file', language: language, content: content };
+            }).catch(function () {
+                current[fileName] = { type: 'file', language: 'javascript', content: '// Binary file not supported' };
+            });
+        }
+    }
+    function readFileAsText(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }
+    function readFileAsDataURL(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(function (eventName) {
+        document.body.addEventListener(eventName, function (e) { e.preventDefault(); e.stopPropagation(); }, false);
+    });
+    fileExplorer.addEventListener('dragenter', function (e) { e.preventDefault(); fileExplorer.classList.add('drag-over'); });
+    fileExplorer.addEventListener('dragover', function (e) { e.preventDefault(); fileExplorer.classList.add('drag-over'); });
+    fileExplorer.addEventListener('dragleave', function (e) {
+        if (e.target === fileExplorer || !fileExplorer.contains(e.relatedTarget)) fileExplorer.classList.remove('drag-over');
+    });
+    fileExplorer.addEventListener('drop', function (e) {
+        e.preventDefault();
+        fileExplorer.classList.remove('drag-over');
+        var items = e.dataTransfer.items;
+        if (!items) return;
+        var files = [];
+        function traverse(item, path) {
+            path = path || '';
+            return new Promise(function (resolve) {
+                if (item.isFile) {
+                    item.file(function (f) { f._relativePath = path + f.name; files.push(f); resolve(); });
+                } else if (item.isDirectory) {
+                    var reader = item.createReader();
+                    reader.readEntries(function (entries) {
+                        var chain = Promise.resolve();
+                        entries.forEach(function (entry) { chain = chain.then(function () { return traverse(entry, path + item.name + '/'); }); });
+                        chain.then(resolve);
+                    });
+                } else resolve();
+            });
+        }
+        var arr = [];
+        for (var i = 0; i < items.length; i++) {
+            var entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
+            if (entry) arr.push(traverse(entry));
+            else {
+                var f = items[i].getAsFile();
+                if (f) { f._relativePath = f.name; files.push(f); }
+            }
+        }
+        Promise.all(arr).then(function () {
+            var promises = files.map(function (f) { return importFile(f, f._relativePath || f.name); });
+            Promise.all(promises).then(function () {
+                renderFileExplorer();
+                showToast('Imported ' + files.length + ' file(s)', 'success');
+                if (previewVisible) refreshPreview();
+                schedulePersist();
+            });
+        });
+    });
+
+    // ============================================================
+    // CONTEXT MENU
+    // ============================================================
+    function showContextMenu(x, y, items) {
+        hideContextMenu();
+        var menu = document.createElement('div');
+        menu.className = 'context-menu';
+        items.forEach(function (item) {
+            if (item.divider) {
+                var div = document.createElement('div'); div.className = 'divider'; menu.appendChild(div);
+            } else {
+                var el = document.createElement('div');
+                el.className = 'menu-item' + (item.danger ? ' danger' : '');
+                el.innerHTML = '<i class="fas ' + item.icon + '"></i> ' + item.label;
+                el.addEventListener('click', function () { hideContextMenu(); item.action(); });
+                menu.appendChild(el);
+            }
+        });
+        document.body.appendChild(menu);
+        contextMenuElement = menu;
+        var rect = menu.getBoundingClientRect();
+        menu.style.left = Math.min(x, window.innerWidth - rect.width - 10) + 'px';
+        menu.style.top = Math.min(y, window.innerHeight - rect.height - 10) + 'px';
+        setTimeout(function () {
+            document.addEventListener('click', hideContextMenu, { once: true });
+            document.addEventListener('contextmenu', hideContextMenu, { once: true });
+        }, 10);
+    }
+    function hideContextMenu() { if (contextMenuElement) { contextMenuElement.remove(); contextMenuElement = null; } }
+
+    // ============================================================
+    // TABS
+    // ============================================================
+    function renderTabs() {
+        tabsContainer.innerHTML = '';
+        openFiles.forEach(function (file) {
+            var tab = document.createElement('div');
+            tab.className = 'tab' + (file.path === activeFilePath ? ' active' : '');
+            var iconInfo = getFileIcon(file.name, file);
+            tab.innerHTML =
+                '<i class="fas ' + iconInfo.class + '" style="color:' + iconInfo.color + ';"></i>' +
+                '<span class="tab-name">' + escapeHtml(file.name) + (file.modified ? ' ●' : '') + '</span>' +
+                '<span class="close"><i class="fas fa-times"></i></span>';
+            tab.addEventListener('click', function () { switchToFile(file.path); });
+            tab.querySelector('.close').addEventListener('click', function (e) { closeFile(file.path, e); });
+            tab.addEventListener('contextmenu', function (e) {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, [
+                    { icon: 'fa-times', label: 'Close Tab', action: function () { closeFile(file.path); } },
+                    { icon: 'fa-download', label: 'Download File', action: function () { var it = getFileByPath(file.path); if (it) downloadSingleFile(file.path, file.name, it); } },
+                    { divider: true },
+                    { icon: 'fa-i-cursor', label: 'Rename File', action: function () { renameItem(file.path, file.name); } },
+                    { icon: 'fa-trash', label: 'Delete File', danger: true, action: function () { deleteItem(file.path, file.name, false); } }
+                ]);
+            });
+            tabsContainer.appendChild(tab);
+        });
+    }
+
+    // ============================================================
+    // SIDEBAR
+    // ============================================================
+    function closeSidebar() {
+        sidebar.classList.add('collapsed');
+        document.querySelectorAll('.activity-bar .icon').forEach(function (i) { i.classList.remove('active'); });
+    }
+    function toggleSidebar() {
+        sidebar.classList.toggle('collapsed');
+        if (sidebar.classList.contains('collapsed')) {
+            document.querySelectorAll('.activity-bar .icon').forEach(function (i) { i.classList.remove('active'); });
+        }
+    }
+
+    // ============================================================
+    // PREVIEW
+    // ============================================================
+    function togglePreview() {
+        previewVisible = !previewVisible;
+        if (previewVisible) {
+            previewPane.classList.remove('hidden');
+            resizeHandle.style.display = 'block';
+            document.getElementById('runBtnText').textContent = 'Stop';
+            refreshPreview();
+        } else {
+            previewPane.classList.add('hidden');
+            resizeHandle.style.display = 'none';
+            document.getElementById('runBtnText').textContent = 'Run';
+        }
+    }
+    function resolveAsset(ref, type) {
+        if (!ref) return null;
+        ref = ref.replace(/^\.\//, '').split('?')[0].split('#')[0];
+        var direct = getFileByPath(ref);
+        if (direct && direct.type === 'file') return { content: direct.content, name: ref };
+        var baseName = ref.split('/').pop();
+        var found = searchFileSystem(fileSystem, function (fileName, item) { return item.type === 'file' && fileName === baseName; });
+        if (found) return { content: found.content, name: found.name };
+        if (type === 'css') return findFileByExt('.css');
+        if (type === 'js') return findFileByExt('.js');
+        return null;
+    }
+    function refreshPreview(manual) {
+        if (!previewVisible && !manual) return;
+        var htmlFile = findFileByName('index.html') || findFileByExt('.html');
+        var htmlContent = htmlFile ? htmlFile.content : '';
+        if (!htmlContent) {
+            htmlContent = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Preview</title></head><body style="font-family:system-ui;padding:40px;text-align:center;color:#666;"><h1>No HTML file found</h1><p>Create an <strong>index.html</strong> to see your preview.</p></body></html>';
+        }
+        var fullDoc = htmlContent;
+        fullDoc = fullDoc.replace(/<link\b[^>]*>/gi, function (tag) {
+            if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) return tag;
+            var hrefMatch = tag.match(/href\s*=\s*["']([^"']+)["']/i);
+            if (!hrefMatch) return '';
+            var css = resolveAsset(hrefMatch[1], 'css');
+            if (css) return '<style data-source="' + hrefMatch[1] + '">\n' + css.content + '\n</style>';
+            return '';
+        });
+        if (!fullDoc.match(/<style/i)) {
+            var cssFile = findFileByName('styles.css') || findFileByName('style.css') || findFileByExt('.css');
+            if (cssFile && cssFile.content) {
+                if (fullDoc.indexOf('</head>') !== -1) fullDoc = fullDoc.replace('</head>', '<style>\n' + cssFile.content + '\n</style>\n</head>');
+                else if (fullDoc.indexOf('<body') !== -1) fullDoc = fullDoc.replace('<body', '<style>\n' + cssFile.content + '\n</style>\n<body');
+                else fullDoc = '<style>\n' + cssFile.content + '\n</style>\n' + fullDoc;
+            }
+        }
+        fullDoc = fullDoc.replace(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script>/gi, function (tag, src) {
+            var js = resolveAsset(src, 'js');
+            if (js) return '<script data-source="' + src + '">\n' + js.content + '\n<\/script>';
+            return '';
+        });
+        if (!fullDoc.match(/<script\b[^>]*>[\s\S]*?<\/script>/i)) {
+            var jsFile = findFileByName('app.js') || findFileByName('script.js') || findFileByName('main.js') || findFileByExt('.js');
+            if (jsFile && jsFile.content) {
+                if (fullDoc.indexOf('</body>') !== -1) fullDoc = fullDoc.replace('</body>', '<script>\n' + jsFile.content + '\n<\/script>\n</body>');
+                else fullDoc += '\n<script>\n' + jsFile.content + '\n<\/script>';
+            }
+        }
+        previewFrame.srcdoc = fullDoc;
+        previewStatus.textContent = 'Updated ' + new Date().toLocaleTimeString();
+        setTimeout(function () { previewStatus.textContent = 'Auto'; }, 2000);
+    }
+    function findFileByName(name) {
+        for (var i = 0; i < openFiles.length; i++) {
+            if (openFiles[i].name === name && openFiles[i].type !== 'image') {
+                return { path: openFiles[i].path, content: openFiles[i].content, name: openFiles[i].name };
+            }
+        }
+        return searchFileSystem(fileSystem, function (fileName, item) { return fileName === name && item.type === 'file'; });
+    }
+    function findFileByExt(ext) {
+        for (var i = 0; i < openFiles.length; i++) {
+            if (openFiles[i].name.endsWith(ext) && openFiles[i].type !== 'image') {
+                return { path: openFiles[i].path, content: openFiles[i].content, name: openFiles[i].name };
+            }
+        }
+        return searchFileSystem(fileSystem, function (fileName, item) { return fileName.endsWith(ext) && item.type === 'file'; });
+    }
+    function searchFileSystem(folder, predicate, path) {
+        path = path || '';
+        for (var name in folder) {
+            if (!folder.hasOwnProperty(name)) continue;
+            var item = folder[name];
+            var fullPath = path ? (path + '/' + name) : name;
+            if (item.type === 'file') {
+                if (predicate(name, item)) return { path: fullPath, content: item.content, name: name };
+            } else if (item.type === 'folder' && item.children) {
+                var result = searchFileSystem(item.children, predicate, fullPath);
+                if (result) return result;
+            }
+        }
+        return null;
+    }
+    function openPreviewInNewTab() {
+        var content = previewFrame.srcdoc;
+        var w = window.open('', '_blank');
+        w.document.open(); w.document.write(content); w.document.close();
+    }
+
+    // ============================================================
+    // SIDEBAR VIEWS
+    // ============================================================
+    document.querySelectorAll('.activity-bar .icon').forEach(function (icon) {
+        icon.addEventListener('click', function () {
+            var view = this.getAttribute('data-view');
+            var wasActive = this.classList.contains('active');
+            var sidebarCollapsed = sidebar.classList.contains('collapsed');
+            if (wasActive && !sidebarCollapsed) { closeSidebar(); return; }
+            document.querySelectorAll('.activity-bar .icon').forEach(function (i) { i.classList.remove('active'); });
+            this.classList.add('active');
+            sidebar.classList.remove('collapsed');
+
+            var titleEl = document.getElementById('sidebarTitle');
+            var actionsEl = document.getElementById('sidebarActions');
+
+            if (view === 'explorer') {
+                titleEl.textContent = 'Explorer';
+                actionsEl.innerHTML = '<i class="fas fa-file" title="New File" onclick="createNewFile()"></i>' +
+                    '<i class="fas fa-folder-plus" title="New Folder" onclick="createNewFolder()"></i>' +
+                    '<i class="fas fa-file-import" title="Import" onclick="triggerImport()"></i>' +
+                    '<i class="fas fa-sync-alt" title="Refresh" onclick="refreshExplorer()"></i>' +
+                    '<i class="fas fa-times close-sidebar" title="Close (Ctrl+B)" onclick="closeSidebar()"></i>';
+                renderFileExplorer();
+            } else if (view === 'search') {
+                titleEl.textContent = 'Search';
+                actionsEl.innerHTML = '<i class="fas fa-times close-sidebar" title="Close (Ctrl+B)" onclick="closeSidebar()"></i>';
+                fileExplorer.innerHTML = '<div style="padding:10px 15px;"><input type="text" id="searchInput" placeholder="Search files..." style="width:100%;padding:6px 10px;background:#3c3c3c;border:1px solid #454545;border-radius:4px;color:#d4d4d4;font-size:12px;outline:none;" oninput="performSearch(this.value)"></div><div id="searchResults"></div>';
+            } else if (view === 'save') {
+                titleEl.textContent = 'Save & Export';
+                actionsEl.innerHTML = '<i class="fas fa-times close-sidebar" title="Close (Ctrl+B)" onclick="closeSidebar()"></i>';
+                renderSaveMenu();
+            } else if (view === 'import') {
+                titleEl.textContent = 'Import';
+                actionsEl.innerHTML = '<i class="fas fa-times close-sidebar" title="Close (Ctrl+B)" onclick="closeSidebar()"></i>';
+                fileExplorer.innerHTML = '<div style="padding:15px;">' +
+                    '<div style="color:#858585;font-size:12px;margin-bottom:15px;">Import files, folders, or images into your project.</div>' +
+                    '<button onclick="fileInput.click()" style="width:100%;padding:10px;margin-bottom:10px;background:#007acc;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;"><i class="fas fa-file"></i> Import Files</button>' +
+                    '<button onclick="folderInput.click()" style="width:100%;padding:10px;margin-bottom:10px;background:#007acc;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;"><i class="fas fa-folder-open"></i> Import Folder</button>' +
+                    '<button onclick="imageInput.click()" style="width:100%;padding:10px;margin-bottom:15px;background:#007acc;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;"><i class="fas fa-image"></i> Import Image</button>' +
+                    '<button onclick="jsonInput.click()" style="width:100%;padding:10px;margin-bottom:15px;background:#4ec9b0;color:#1e1e1e;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;"><i class="fas fa-file-code"></i> Load Workspace JSON</button>' +
+                    '<div style="padding:15px;background:#2a2d2e;border-radius:4px;font-size:11px;color:#858585;text-align:center;"><i class="fas fa-info-circle"></i><br>You can also drag & drop files onto the Explorer</div></div>';
+            } else if (view === 'snippets') {
+                titleEl.textContent = 'Snippets & IntelliSense';
+                actionsEl.innerHTML = '<i class="fas fa-times close-sidebar" title="Close (Ctrl+B)" onclick="closeSidebar()"></i>';
+                renderSnippetsPanel();
+            }
+        });
+    });
+
+    function renderSnippetsPanel() {
+        var lang = editor ? getActiveLang(editor) : 'javascript';
+        var snips = SNIPPETS[lang] || [];
+        var apis = LANGUAGE_APIS[lang] || [];
+        var html = '';
+        html += '<div style="padding:10px 15px;border-bottom:1px solid #333;"><div style="font-size:11px;color:#858585;">Language: <strong style="color:#d4d4d4;">' + (lang === 'htmlmixed' ? 'HTML' : lang.toUpperCase()) + '</strong></div></div>';
+        html += '<div style="padding:10px 15px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;font-weight:600;">Snippets (' + snips.length + ') — Tab/Enter to expand</div>';
+        snips.forEach(function (s) {
+            html += '<div style="padding:6px 15px;font-size:12px;display:flex;align-items:center;gap:10px;">' +
+                '<span class="hint-prefix snippet">S</span>' +
+                '<span style="color:#d4d4d4;font-family:monospace;flex:1;">' + escapeHtml(s.label) + '</span>' +
+                '<span style="color:#858585;font-size:11px;">' + escapeHtml(s.detail || '') + '</span></div>';
+        });
+        html += '<div style="padding:14px 15px 6px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#858585;font-weight:600;border-top:1px solid #333;margin-top:6px;">APIs (' + apis.length + ')</div>';
+        apis.slice(0, 80).forEach(function (a) {
+            var typeIcons = { keyword: 'K', function: 'ƒ', method: 'ƒ', property: 'P', class: 'C', variable: 'V', tag: 'T', attribute: 'A', 'css-prop': '{}' };
+            var ic = typeIcons[a.type] || '·';
+            html += '<div style="padding:6px 15px;font-size:12px;display:flex;align-items:center;gap:10px;">' +
+                '<span class="hint-prefix ' + a.type + '">' + ic + '</span>' +
+                '<span style="color:#d4d4d4;font-family:monospace;flex:1;">' + escapeHtml(a.label) + '</span>' +
+                '<span style="color:#858585;font-size:11px;">' + escapeHtml(a.detail || '') + '</span></div>';
+        });
+        fileExplorer.innerHTML = html;
+    }
+
+    function performSearch(query) {
+        var results = document.getElementById('searchResults');
+        if (!query || query.length < 2) { results.innerHTML = ''; return; }
+        var matches = [];
+        function searchInFolder(folder, path) {
+            for (var name in folder) {
+                if (!folder.hasOwnProperty(name)) continue;
+                var item = folder[name];
+                var fullPath = path ? (path + '/' + name) : name;
+                if (item.type === 'file' && item.content && item.content.indexOf('data:') !== 0 &&
+                    item.content.toLowerCase().indexOf(query.toLowerCase()) !== -1) {
+                    matches.push({ name: name, path: fullPath });
+                } else if (item.type === 'folder' && item.children) searchInFolder(item.children, fullPath);
+            }
+        }
+        searchInFolder(fileSystem, '');
+        if (matches.length === 0) {
+            results.innerHTML = '<div style="padding:15px;color:#858585;font-size:12px;">No results found</div>';
+            return;
+        }
+        results.innerHTML = matches.map(function (m) {
+            return '<div style="padding:8px 15px;cursor:pointer;font-size:12px;border-bottom:1px solid #2a2d2e;" onclick="openFileFromSearch(\'' + m.path.replace(/'/g, "\\'") + '\', \'' + m.name.replace(/'/g, "\\'") + '\')">' +
+                '<div style="color:#d4d4d4;"><i class="fas fa-file" style="color:#519aba;"></i> ' + escapeHtml(m.name) + '</div>' +
+                '<div style="color:#858585;font-size:11px;padding-left:20px;">' + escapeHtml(m.path) + '</div></div>';
+        }).join('');
+    }
+    function openFileFromSearch(path, name) { var item = getFileByPath(path); if (item) openFileInEditor(path, name, item); }
+    function refreshExplorer() { renderFileExplorer(); showToast('Explorer refreshed', 'info'); }
+
+    // ============================================================
+    // RESIZE
+    // ============================================================
+    resizeHandle.addEventListener('mousedown', function () {
+        isResizing = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', function (e) {
+        if (!isResizing) return;
+        var container = document.getElementById('editorAndPreview');
+        var rect = container.getBoundingClientRect();
+        var percentage = ((e.clientX - rect.left) / rect.width) * 100;
+        var clamped = Math.max(20, Math.min(80, percentage));
+        document.getElementById('editorPane').style.flex = '0 0 ' + clamped + '%';
+        previewPane.style.width = (100 - clamped) + '%';
+    });
+    document.addEventListener('mouseup', function () {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            if (editor) editor.refresh();
+        }
+    });
+
+    // ============================================================
+    // TOAST
+    // ============================================================
+    function showToast(message, type) {
+        type = type || 'info';
+        var container = document.getElementById('toastContainer');
+        var toast = document.createElement('div');
+        toast.className = 'toast ' + type;
+        var icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+        toast.innerHTML = '<i class="fas ' + (icons[type] || icons.info) + '"></i> ' + escapeHtml(message);
+        container.appendChild(toast);
+        setTimeout(function () {
+            toast.style.animation = 'slideOut 0.3s ease forwards';
+            setTimeout(function () { toast.remove(); }, 300);
+        }, 2500);
+    }
+    function showToastWithUndo(message, undoFn) {
+        var container = document.getElementById('toastContainer');
+        var toast = document.createElement('div');
+        toast.className = 'toast info';
+        toast.innerHTML = '<i class="fas fa-info-circle"></i> ' + escapeHtml(message) + '<button class="undo-btn"><i class="fas fa-undo"></i> Undo</button>';
+        toast.querySelector('.undo-btn').addEventListener('click', function () { undoFn(); toast.remove(); });
+        container.appendChild(toast);
+        setTimeout(function () {
+            toast.style.animation = 'slideOut 0.3s ease forwards';
+            setTimeout(function () { toast.remove(); }, 300);
+        }, 6000);
+    }
+
+    // ============================================================
+    // MODALS
+    // ============================================================
+    function showInputModal(title, placeholder, defaultValue, onConfirm) {
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal"><h3>' + escapeHtml(title) + '</h3>' +
+            '<input type="text" placeholder="' + escapeHtml(placeholder) + '" value="' + escapeHtml(defaultValue || '') + '">' +
+            '<div class="buttons"><button class="secondary">Cancel</button><button class="primary">OK</button></div></div>';
+        document.body.appendChild(overlay);
+        var input = overlay.querySelector('input');
+        input.focus(); input.select();
+        function close() { overlay.remove(); }
+        function confirm() { var val = input.value.trim(); close(); if (val) onConfirm(val); }
+        overlay.querySelector('.primary').addEventListener('click', confirm);
+        overlay.querySelector('.secondary').addEventListener('click', close);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') confirm();
+            if (e.key === 'Escape') close();
+        });
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    }
+    function showConfirmModal(title, message, confirmLabel, onConfirm) {
+        var overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal"><h3>' + escapeHtml(title) + '</h3>' +
+            '<p>' + escapeHtml(message) + '</p>' +
+            '<div class="buttons"><button class="secondary">Cancel</button><button class="danger">' + escapeHtml(confirmLabel) + '</button></div></div>';
+        document.body.appendChild(overlay);
+        function close() { overlay.remove(); }
+        overlay.querySelector('.danger').addEventListener('click', function () { close(); onConfirm(); });
+        overlay.querySelector('.secondary').addEventListener('click', close);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+        var escHandler = function (e) {
+            if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); }
+            if (e.key === 'Enter') { close(); onConfirm(); document.removeEventListener('keydown', escHandler); }
+        };
+        document.addEventListener('keydown', escHandler);
+    }
+
+    // ============================================================
+    // KEYBOARD
+    // ============================================================
+    document.addEventListener('keydown', function (e) {
+        var editorFocused = editor && editor.hasFocus && editor.hasFocus();
+        if (e.key === 'Delete' && selectedExplorerItem && !editorFocused) {
+            e.preventDefault();
+            deleteItem(selectedExplorerItem.path, selectedExplorerItem.name, selectedExplorerItem.isFolder);
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+            e.preventDefault();
+            openSaveMenu();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); forceSave(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); toggleSidebar(); }
+        if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); togglePreview(); }
+    });
+
+    // Save on page unload
+    window.addEventListener('beforeunload', function () {
+        // Force-sync any pending changes to fileSystem, then save
+        if (activeFilePath) {
+            var f = findOpenFile(activeFilePath);
+            if (f && f.type !== 'image') {
+                var fsFile = getFileByPath(activeFilePath);
+                if (fsFile) fsFile.content = editor.getValue();
+            }
+        }
+        try { saveToBrowser(true); } catch (e) {}
+    });
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    function init() {
+        try {
+            // Try loading persisted workspace first
+            var restored = loadFromBrowser();
+
+            initEditor();
+
+            if (restored) {
+                renderFileExplorer();
+                renderTabs();
+                if (activeFilePath && getFileByPath(activeFilePath)) {
+                    var f = getFileByPath(activeFilePath);
+                    openFileInEditor(activeFilePath, activeFilePath.split('/').pop(), f);
+                } else if (openFiles.length > 0) {
+                    switchToFile(openFiles[0].path);
+                } else {
+                    var first = findFileByExt('.html');
+                    if (first) openFileInEditor(first.path, first.name, getFileByPath(first.path));
+                }
+                updatePersistIndicator();
+                showToast('Restored workspace from browser', 'success');
+            } else {
+                renderFileExplorer();
+                openFileInEditor('app.js', 'app.js', fileSystem['app.js']);
+                showToast('Welcome! Click SAVE to download or persist work', 'info');
+            }
+
+            previewVisible = true;
+            previewPane.classList.remove('hidden');
+            resizeHandle.style.display = 'block';
+            document.getElementById('runBtnText').textContent = 'Stop';
+
+            updateTitleBar();
+            updateDirtyCount();
+            setTimeout(function () { refreshPreview(); }, 300);
+        } catch (err) {
+            console.error('Init error:', err);
+            showToast('Error: ' + err.message, 'error');
+        }
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+    </script>
+</body>
+</html>
